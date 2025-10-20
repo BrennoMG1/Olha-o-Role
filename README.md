@@ -45,29 +45,45 @@ Convite via link
 # **Requisitos Funcionais**
 
 **1.** Cadastro e login de usuários;
+
 **2.** Criar eventos com nome, descrição, data, quantidade de participantes e itens;
+
 **3.** Gerar link para convidar participantes;
+
 **4.** Ingressar em evento através de link;
+
 **5.** Editar evento (somente o criador);
+
 **6.** Permitir que cada participante selecione um item da lista;
+
 **7.** Visualizar lista de participantes e ao lado o item selecionado;
+
 **8.** Consultar, adicionar e/ou remover amigos dentro do aplicativo;
+
 **9.** Acessar o histórico de eventos passados;
+
 **10.** Reutilizar eventos como modelos;
+
 **11.** Convidar amigos diretamente para novos eventos.
 
 # **Requisitos Não Funcionais**
 
 **1.** Precisa ser intuitivo e de fácil navegação;
+
 **2.** Deve funcionar em dispositivos android com versão mínima 8.0;
+
 **3.** O armazenamento local será implementado para funcionamento offline;
+
 **4.** Dados sensíveis (senha) devem ser armazenados de forma segura (hash);
+
 **5.** O tempo de resposta entre as ações do usuário e retorno do sistema, não devem ultrapassar 2 segundos. 
 
 # **Testes**
 
 **1.** Testes manuais na interface;
+
 **2.** Testes de Usabilidade;
+
 **3.** Testes de responsividade em diferentes dispositivos.
 
 # **Estrutura do Projeto**
@@ -99,8 +115,11 @@ Consultora, Testador.
 Caso sejam realizadas alterações no software, documente nesta área com as respectivas informações:
 
 **1.** Dados;
+
 **2.** Versão da Descrição;
+
 **3.** Requisito (tipo: Funcionais, não funcionais);
+
 **4.** Autor.
 
 # **Página de destino**
