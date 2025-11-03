@@ -4,6 +4,10 @@ import 'create_event_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/event.dart';
 import '/auth/auth_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // <-- 1. ADICIONE ESTA LINHA
+import 'package:flutter/services.dart';
+import 'join_event_screen.dart';
+
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -17,7 +21,11 @@ class _EventListScreenState extends State<EventListScreen> {
   // Isso garante que a operação de abrir a caixa só será executada UMA VEZ.
   late final Future<Box<Event>> _eventsBoxFuture;
   final AuthService _authService = AuthService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   User? _currentUser;
+  Map<String, dynamic>? _userDocumentData;
+
+  
 
   @override
   void initState() {
@@ -28,9 +36,51 @@ class _EventListScreenState extends State<EventListScreen> {
   }
   Future<void> _loadCurrentUser() async {
     final user = FirebaseAuth.instance.currentUser;
+    Map<String, dynamic>? docData;
+
+    if (user != null) {
+      // Se o usuário existe, busca o documento dele no Firestore
+      try {
+        // 1. Pegamos a REFERÊNCIA do documento
+        final docRef = _firestore.collection('users').doc(user.uid);
+        final docSnap = await docRef.get();
+
+        if (docSnap.exists) {
+          docData = docSnap.data();
+
+          // --- INÍCIO DA CORREÇÃO ---
+          // 2. Verificamos se os dados existem E se o friendCode está nulo ou faltando
+          if (docData != null && (docData['friendCode'] == null || docData['friendCode'] == '')) {
+            
+            // 3. Geramos o ID (exatamente a mesma lógica da tela de setup)
+            final String fullHex = user.uid.hashCode
+                .abs()
+                .toRadixString(16)
+                .padLeft(8, '0')
+                .toUpperCase();
+            final String friendCode = fullHex.substring(fullHex.length - 8);
+
+            // 4. Atualizamos o documento no Firestore (em segundo plano)
+            //    Isso adiciona o campo que faltava
+            await docRef.update({'friendCode': friendCode});
+
+            // 5. Atualizamos os dados locais IMEDIATAMENTE
+            //    para que o Drawer mostre o ID agora, sem precisar recarregar.
+            docData['friendCode'] = friendCode;
+          }
+          // --- FIM DA CORREÇÃO ---
+
+        }
+      } catch (e) {
+        print("Erro ao buscar dados do Firestore: $e");
+      }
+    }
+
+    // Atualiza o estado com AMBOS os dados (do Auth e do Firestore)
     if (mounted) {
       setState(() {
         _currentUser = user;
+        _userDocumentData = docData;
       });
     }
   }
@@ -123,12 +173,62 @@ class _EventListScreenState extends State<EventListScreen> {
                   color: Color.fromARGB(255, 63, 39, 28),
                 ),
               ),
-              accountEmail: Text(
-                _currentUser?.email ?? '', // Email do usuário
-                style: const TextStyle(
-                  fontFamily: 'Itim',
-                  color: Color.fromARGB(255, 63, 39, 28),
-                ),
+              accountEmail: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. O E-mail (como antes)
+                  Text(
+                    _currentUser?.email ?? '',
+                    style: const TextStyle(
+                      fontFamily: 'Itim',
+                      color: Color.fromARGB(255, 63, 39, 28),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 4), // Pequeno espaçamento
+
+                  // 2. O ID de Amigo (pequeno e com botão de copiar)
+                  InkWell( // Faz a área ser clicável
+                    onTap: () {
+                      // Ação de copiar
+                      final friendCode = _userDocumentData?['friendCode'];
+                      if (friendCode != null) {
+                        Clipboard.setData(ClipboardData(text: friendCode));
+                        // Apenas mostra o SnackBar, sem fechar o drawer
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'ID de Amigo copiado para a área de transferência!'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 2), // Mais rápido
+                          ),
+                        );
+                      }
+                    },
+                    child: Row(
+                      // Alinha o texto e o ícone
+                      children: [
+                        Text(
+                          // Mostra o friendCode lido do Firestore
+                          'ID: ${_userDocumentData?['friendCode'] ?? '...'}',
+                          style: const TextStyle(
+                            fontFamily: 'Itim',
+                            fontSize: 12, // <-- Pequeno
+                            fontWeight: FontWeight.bold,
+                            color: Color.fromARGB(255, 63, 39, 28),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.copy_outlined, 
+                          size: 14, // <-- Pequeno
+                          color: Color.fromARGB(255, 63, 39, 28),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               currentAccountPicture: CircleAvatar(
                 // Aqui está a mágica da foto:
@@ -148,6 +248,7 @@ class _EventListScreenState extends State<EventListScreen> {
                 color: Color.fromARGB(255, 211, 173, 92), // Cor de fundo
               ),
             ),
+            
             ListTile(
               leading: const Icon(Icons.home),
               title: const Text('Início'),
@@ -266,9 +367,15 @@ class _EventListScreenState extends State<EventListScreen> {
                     ListTile(
                       leading: const Icon(Icons.arrow_forward, size: 28),
                       title: const Text('Ingressar em um evento',
-                          style: TextStyle(fontSize: 18, decoration: TextDecoration.lineThrough)),
-                      trailing: Text("Em Desenvolvimento",
-                          style: TextStyle(fontSize: 12)),
+                          style: TextStyle(fontSize: 18)), // <-- 1. Removido o "lineThrough"
+                      // 2. Removido o "trailing"
+                      onTap: () { // <-- 3. Adicionado o onTap
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const JoinEventScreen()),
+                        );
+                      },
                     ),
                     const ListTile(
                       leading: Icon(Icons.people_outline, size: 28),

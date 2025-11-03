@@ -32,15 +32,6 @@ class AuthService {
       // Faz o login no Firebase
       final UserCredential userCredential = await _auth.signInWithCredential(credential);
 
-      // Salva/Atualiza o usuário no Firestore
-      // Usamos set com merge:true para criar se não existir ou atualizar se já existir
-      if (userCredential.user != null) {
-        await saveUserToFirestore(
-          userCredential.user!,
-          userCredential.user!.displayName, // Google já fornece o nome
-        );
-      }
-
       return userCredential;
     } on FirebaseAuthException catch (e) {
       print(e.message);
@@ -87,17 +78,23 @@ class AuthService {
 
   // --- Salvar/Atualizar Usuário no Firestore ---
   // Este método é chamado após o registro ou login com Google
-  Future<void> saveUserToFirestore(User user, String? displayName) async {
+  Future<void> saveUserToFirestore(
+    User user,
+    String? displayName,
+    String friendCode, // <-- 1. ADICIONE O NOVO PARÂMETRO
+  ) async {
     try {
       final userRef = _firestore.collection('users').doc(user.uid);
 
       await userRef.set({
         'uid': user.uid,
         'email': user.email,
-        'displayName': displayName ?? user.email?.split('@')[0], // Usa o nome ou parte do email
+        'displayName': displayName ?? user.email?.split('@')[0],
         'photoURL': user.photoURL,
         'lastLogin': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true)); // merge:true é crucial!
+        'friendCode': friendCode, // <-- 2. ADICIONE O CAMPO NO MAPA
+      }, SetOptions(merge: true));
+
 
     } catch (e) {
       print("Erro ao salvar usuário no Firestore: $e");
@@ -127,8 +124,22 @@ class AuthService {
 
 
   // --- Logout ---
-  Future<void> signOut() async {
+ Future<void> signOut() async {
+  try {
+    // 1. Tenta fazer o logout do Google.
+    // Se o usuário não estava logado com o Google, isso pode
+    // falhar, e nós vamos "pegar" o erro (catch).
     await _googleSignIn.signOut();
-    await _auth.signOut();
+    
+  } catch (e) {
+    // 2. O "catch" pega o erro e o ignora,
+    // permitindo que o código continue.
+    print("Nenhum usuário do Google para deslogar (isso é normal): $e");
   }
+
+  // 3. Este é o logout principal do Firebase.
+  // Como o erro do Google foi pego, esta linha agora
+  // será executada EM TODOS OS CASOS (Google ou E-mail).
+  await _auth.signOut();
+}
 }

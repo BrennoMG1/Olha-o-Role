@@ -50,40 +50,51 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Atualiza o nome de exibição no Firebase Auth
-      await widget.user.updateDisplayName(_displayNameController.text);
+  // 1. Atualiza o nome de exibição no Firebase Auth
+  await widget.user.updateDisplayName(_displayNameController.text);
 
-      await _authService.saveUserToFirestore(
-        widget.user,
-        _displayNameController.text,
-      );
+  // --- 2. GERE O CÓDIGO DE AMIGO AQUI ---
+  // Isso pega o hashCode do UID, converte para hexadecimal,
+  // garante 8 dígitos (com '0' à esquerda) e pega os últimos 8.
+  final String fullHex = widget.user.uid.hashCode
+      .abs()
+      .toRadixString(16)
+      .padLeft(8, '0')
+      .toUpperCase();
+  final String friendCode = fullHex.substring(fullHex.length - 8);
+  // Exemplo de resultado: "F1C4A3D9"
 
-      // 3. Navega para a tela principal, removendo todas as telas anteriores
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const EventListScreen()),
-          (Route<dynamic> route) => false,
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Erro ao salvar perfil: ${e.message}')),
-      );
-    } catch (e) {
-      // Pega outros erros (como o JavaScriptObject que esconde o permission-denied)
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Erro ao salvar no Firestore: ${e.toString()}'),
-            backgroundColor: Colors.red),
-      );
-    }
-    
-    finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+  // 3. PASSE O CÓDIGO AO SALVAR (AGORA COM 3 ARGUMENTOS)
+  await _authService.saveUserToFirestore(
+    widget.user,
+    _displayNameController.text,
+    friendCode, // <-- O argumento que faltava
+  );
+
+  // 4. Navega para a tela principal, removendo todas as telas anteriores
+  if (mounted) {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const EventListScreen()),
+      (Route<dynamic> route) => false,
+    );
+  }
+} on FirebaseAuthException catch (e) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+        content: Text('Erro ao salvar perfil: ${e.message}')),
+  );
+} catch (e) {
+  // Pega outros erros
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+        content: Text('Erro ao salvar no Firestore: ${e.toString()}'),
+        backgroundColor: Colors.red),
+  );
+    } finally {
+  if (mounted) {
+    setState(() => _isLoading = false);
+  }
     }
   }
 

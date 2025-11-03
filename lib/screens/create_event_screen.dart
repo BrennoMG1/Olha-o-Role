@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'add_items_screen.dart';
 import 'dart:math'; // Adicione este import para gerar ID aleatório
 
+
+
 class CreateEventScreen extends StatefulWidget {
   const CreateEventScreen({super.key});
 
