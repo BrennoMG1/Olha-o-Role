@@ -35,7 +35,7 @@ class AuthService {
       // Salva/Atualiza o usuário no Firestore
       // Usamos set com merge:true para criar se não existir ou atualizar se já existir
       if (userCredential.user != null) {
-        await _saveUserToFirestore(
+        await saveUserToFirestore(
           userCredential.user!,
           userCredential.user!.displayName, // Google já fornece o nome
         );
@@ -87,7 +87,7 @@ class AuthService {
 
   // --- Salvar/Atualizar Usuário no Firestore ---
   // Este método é chamado após o registro ou login com Google
-  Future<void> _saveUserToFirestore(User user, String? displayName) async {
+  Future<void> saveUserToFirestore(User user, String? displayName) async {
     try {
       final userRef = _firestore.collection('users').doc(user.uid);
 

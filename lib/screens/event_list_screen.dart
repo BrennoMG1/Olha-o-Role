@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'create_event_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/event.dart';
+import '/auth/auth_service.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -14,12 +16,23 @@ class _EventListScreenState extends State<EventListScreen> {
   // Variável para guardar a referência ao Future que abre a caixa.
   // Isso garante que a operação de abrir a caixa só será executada UMA VEZ.
   late final Future<Box<Event>> _eventsBoxFuture;
+  final AuthService _authService = AuthService();
+  User? _currentUser;
 
   @override
   void initState() {
     super.initState();
     // Inicializamos o Future aqui, no initState.
     _eventsBoxFuture = _openEventsBox();
+    _loadCurrentUser();
+  }
+  Future<void> _loadCurrentUser() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (mounted) {
+      setState(() {
+        _currentUser = user;
+      });
+    }
   }
 
   /// Método auxiliar para abrir a caixa de eventos de forma segura.
@@ -100,18 +113,39 @@ class _EventListScreenState extends State<EventListScreen> {
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
-          children: <Widget>[
-            const DrawerHeader(
-              decoration: BoxDecoration(
-                color: Color.fromARGB(255, 211, 173, 92),
-              ),
-              child: Text(
-                'Olha o Rolê',
-                style: TextStyle(
-                  color: Color.fromARGB(255, 63, 39, 28),
-                  fontSize: 24,
+          children: <Widget>[// VVVVV SUBSTITUA O DRAWERHEADER ANTIGO POR ISTO VVVVV
+            UserAccountsDrawerHeader(
+              accountName: Text(
+                _currentUser?.displayName ?? 'Usuário', // Nome do usuário
+                style: const TextStyle(
                   fontFamily: 'Itim',
+                  fontSize: 18,
+                  color: Color.fromARGB(255, 63, 39, 28),
                 ),
+              ),
+              accountEmail: Text(
+                _currentUser?.email ?? '', // Email do usuário
+                style: const TextStyle(
+                  fontFamily: 'Itim',
+                  color: Color.fromARGB(255, 63, 39, 28),
+                ),
+              ),
+              currentAccountPicture: CircleAvatar(
+                // Aqui está a mágica da foto:
+                backgroundImage: (_currentUser?.photoURL != null)
+                    ? NetworkImage(_currentUser!.photoURL!) // Usa a foto (ex: Google)
+                    : null,
+                backgroundColor: Colors.white,
+                child: (_currentUser?.photoURL == null)
+                    ? const Icon( // Fallback: Ícone de pessoa
+                        Icons.person,
+                        size: 40,
+                        color: Color.fromARGB(255, 63, 39, 28),
+                      )
+                    : null,
+              ),
+              decoration: const BoxDecoration(
+                color: Color.fromARGB(255, 211, 173, 92), // Cor de fundo
               ),
             ),
             ListTile(
@@ -130,6 +164,26 @@ class _EventListScreenState extends State<EventListScreen> {
               leading: const Icon(Icons.settings),
               title: const Text('Configurações - em breve' ,style: TextStyle(decoration: TextDecoration.lineThrough),),
               
+            ),
+            const Divider(), // Um separador visual
+            
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text(
+                'Sair',
+                style: TextStyle(color: Colors.red, fontFamily: 'Itim'),
+              ),
+              onTap: () async {
+                // 1. Fecha o drawer para o usuário ver a tela de login
+                Navigator.pop(context); 
+                
+                // 2. Chama o método de logout do seu serviço
+                await _authService.signOut();
+                
+                // 3. O seu "AuthGate" (que deve estar escutando 
+                //    o authStateChanges) fará o resto, 
+                //    redirecionando para a tela de login.
+              },
             ),
           ],
         ),
