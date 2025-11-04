@@ -1,16 +1,19 @@
-// lib/event_detail_screen.dart
+// lib/event_detail_screen.dart (VERSÃO COMPLETA E CORRIGIDA)
 
+import 'package:Olha_o_Role/models/contributor.dart';
 import 'package:Olha_o_Role/services/event_service.dart';
+import 'package:Olha_o_Role/services/friends_services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Para o input de números
 import 'package:intl/intl.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '/services/event_item.dart';
+import 'create_event_screen.dart';
 
 class EventDetailScreen extends StatefulWidget {
-  // 1. Recebemos o documento do evento ao navegar
   final QueryDocumentSnapshot event;
-
   const EventDetailScreen({super.key, required this.event});
 
   @override
@@ -18,30 +21,256 @@ class EventDetailScreen extends StatefulWidget {
 }
 
 class _EventDetailScreenState extends State<EventDetailScreen> {
+  // --- Serviços e Variáveis de Estado ---
   final EventService _eventService = EventService();
+  final FriendsService _friendsService = FriendsService();
   final User? _currentUser = FirebaseAuth.instance.currentUser;
 
-  // 2. Variáveis de estado para guardar os dados do evento
   late String _eventName;
   late String _eventId;
   late Map<String, dynamic> _eventData;
   late List<EventItem> _items;
+  late List<String> _participants;
 
+  // --- Métodos de Ciclo de Vida (initState) ---
   @override
   void initState() {
     super.initState();
-    // 3. Inicializamos o estado com os dados do documento
-    _eventData = widget.event.data() as Map<String, dynamic>;
-    _eventId = widget.event.id;
+    _loadDataFromWidget(
+      widget.event.data() as Map<String, dynamic>,
+      widget.event.id,
+    );
+  }
+
+  // --- Métodos de Lógica ---
+
+  void _loadDataFromWidget(Map<String, dynamic> data, String docId) {
+    _eventData = data;
+    _eventId = docId;
     _eventName = _eventData['name'] ?? 'Detalhes do Evento';
 
-    // Converte a lista de mapas para uma lista de EventItem
     _items = (_eventData['items'] as List<dynamic>)
         .map((itemData) => EventItem.fromMap(itemData))
         .toList();
+
+    _participants = List<String>.from(_eventData['participants'] ?? []);
   }
 
-  // 4. Movemos o widget auxiliar para cá
+  Future<void> _refreshEventData() async {
+    try {
+      final docSnap = await FirebaseFirestore.instance
+          .collection('events')
+          .doc(_eventId)
+          .get();
+      if (docSnap.exists && mounted) {
+        setState(() {
+          _loadDataFromWidget(
+            docSnap.data() as Map<String, dynamic>,
+            docSnap.id,
+          );
+        });
+      }
+    } catch (e) {
+      print("Erro ao recarregar dados do evento: $e");
+    }
+  }
+
+  void _navigateToEditScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateEventScreen(
+          existingEvent: widget.event,
+        ),
+      ),
+    ).then((_) {
+      _refreshEventData();
+    });
+  }
+
+  // --- Métodos de Diálogo e BottomSheet ---
+
+  Future<void> _showDeleteConfirmationDialog() async {
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color.fromARGB(255, 230, 210, 185),
+          title: const Text('Confirmar Exclusão',
+              style: TextStyle(fontFamily: 'Itim')),
+          content: Text(
+              'Você tem certeza que deseja excluir o evento "$_eventName"?\nEsta ação não pode ser desfeita.',
+              style: const TextStyle(fontFamily: 'Itim')),
+          actions: <Widget>[
+            TextButton(
+              child:
+                  const Text('Cancelar', style: TextStyle(fontFamily: 'Itim')),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+              child:
+                  const Text('Excluir', style: TextStyle(fontFamily: 'Itim')),
+              onPressed: () async {
+                await _eventService.deleteEvent(_eventId);
+                if (mounted) {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showInviteOptionsBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.3,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (BuildContext context, ScrollController scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color.fromARGB(255, 245, 235, 220),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Convidar para o Evento',
+                          style: TextStyle(
+                            fontFamily: 'Itim',
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Color.fromARGB(255, 63, 39, 28),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close,
+                              color: Color.fromARGB(255, 63, 39, 28)),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(16.0),
+                      children: [
+                        _buildQrCodeSection(),
+                        const SizedBox(height: 30),
+                        _buildInviteFriendsListSection(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showClaimQuantityDialog(EventItem item) {
+    final _quantityController = TextEditingController(text: '1');
+    final int maxAvailable = item.quantityAvailable;
+    final _formKey = GlobalKey<FormState>();
+
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color.fromARGB(255, 245, 235, 220),
+          title: Text('Levar "${item.name}"',
+              style: const TextStyle(fontFamily: 'Itim')),
+          content: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                    'Quantos você vai levar? (Disponível: $maxAvailable de ${item.totalQuantity})',
+                    style: const TextStyle(fontFamily: 'Itim')),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _quantityController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'Quantidade',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Inválido';
+                    }
+                    final int? val = int.tryParse(value);
+                    if (val == null || val <= 0) {
+                      return 'Deve ser > 0';
+                    }
+                    if (val > maxAvailable) {
+                      return 'Máx: $maxAvailable';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar',
+                  style: TextStyle(
+                      fontFamily: 'Itim',
+                      color: Color.fromARGB(255, 63, 39, 28))),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (_formKey.currentState?.validate() ?? false) {
+                  final int quantityToClaim =
+                      int.parse(_quantityController.text);
+                  if (_currentUser == null) return;
+
+                  Navigator.pop(context); // Fecha o diálogo
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Registrando item...')),
+                  );
+
+                  await _eventService.claimItemPortion(
+                      _eventId, item.name, quantityToClaim, _currentUser!);
+
+                  await _refreshEventData();
+                }
+              },
+              child: const Text('Confirmar',
+                  style: TextStyle(fontFamily: 'Itim')),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // --- Métodos Auxiliares de Build (Widgets) ---
+
   Widget _buildInfoRow(IconData icon, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 8.0),
@@ -73,52 +302,319 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     );
   }
 
-  // 5. Movemos o diálogo de confirmação de exclusão para cá
-  Future<void> _showDeleteConfirmationDialog() async {
-    return showDialog<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: const Color.fromARGB(255, 230, 210, 185),
-          title: const Text('Confirmar Exclusão',
-              style: TextStyle(fontFamily: 'Itim')),
-          content: Text(
-              'Você tem certeza que deseja excluir o evento "$_eventName"?\nEsta ação não pode ser desfeita.',
-              style: const TextStyle(fontFamily: 'Itim')),
-          actions: <Widget>[
-            TextButton(
-              child:
-                  const Text('Cancelar', style: TextStyle(fontFamily: 'Itim')),
-              onPressed: () => Navigator.of(context).pop(),
+  Widget _buildQrCodeSection() {
+    final String qrData = 'olharole://${_eventId}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Convite via QR Code',
+          style: TextStyle(
+            fontFamily: 'Itim',
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Color.fromARGB(255, 63, 39, 28),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Center(
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  spreadRadius: 2,
+                ),
+              ],
             ),
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
-              child:
-                  const Text('Excluir', style: TextStyle(fontFamily: 'Itim')),
-              onPressed: () async {
-                await _eventService.deleteEvent(_eventId);
-                if (mounted) {
-                  Navigator.of(context).pop(); // Fecha o diálogo
-                  Navigator.of(context).pop(); // Volta para a lista de eventos
-                }
-              },
+            child: QrImageView(
+              data: qrData,
+              version: QrVersions.auto,
+              size: 200.0,
+              gapless: false,
+              backgroundColor: Colors.white,
+              foregroundColor: const Color.fromARGB(255, 63, 39, 28),
             ),
-          ],
-        );
-      },
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Center(
+          child: Text(
+            'Seu amigo pode escanear este código para entrar no evento.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Itim', fontSize: 14),
+          ),
+        ),
+      ],
     );
   }
 
+  Widget _buildInviteFriendsListSection() {
+    if (_eventData['hostId'] != _currentUser?.uid) {
+      return Container();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Convidar Amigos do App',
+          style: TextStyle(
+            fontFamily: 'Itim',
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Color.fromARGB(255, 63, 39, 28),
+          ),
+        ),
+        const SizedBox(height: 10),
+        StreamBuilder<QuerySnapshot>(
+          stream: _friendsService.getFriendsStream(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return const Text('Erro ao carregar amigos');
+            }
+            final friends = snapshot.data?.docs ?? [];
+
+            if (friends.isEmpty) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: Text(
+                    'Você não tem amigos adicionados para convidar.',
+                    style: TextStyle(fontFamily: 'Itim', fontSize: 16),
+                  ),
+                ),
+              );
+            }
+
+            return Column(
+              children: friends.map((friendDoc) {
+                final friendId = friendDoc.id;
+                final friendData = friendDoc.data() as Map<String, dynamic>;
+                final friendName = friendData['displayName'] ?? 'Amigo';
+
+                final bool isAlreadyInvited = _participants.contains(friendId);
+
+                return ListTile(
+                  leading: const Icon(Icons.person,
+                      color: Color.fromARGB(255, 63, 39, 28)),
+                  title: Text(friendName,
+                      style: const TextStyle(fontFamily: 'Itim')),
+                  trailing: isAlreadyInvited
+                      ? TextButton(
+                          onPressed: null,
+                          child: Text(
+                            'Já no evento',
+                            style: TextStyle(
+                                fontFamily: 'Itim', color: Colors.grey.shade600),
+                          ),
+                        )
+                      : ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                const Color.fromARGB(255, 63, 39, 28),
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () async {
+                            await _eventService.inviteFriendToEvent(
+                                _eventId, friendId);
+                            setState(() {
+                              _participants.add(friendId);
+                            });
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('$friendName foi convidado!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          },
+                          child: const Text('Convidar',
+                              style: TextStyle(fontFamily: 'Itim')),
+                        ),
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContributorAvatars(List<Contributor> contributors) {
+    if (contributors.isEmpty) {
+      return const Text(
+        'Ninguém se ofereceu para levar este item ainda.',
+        style: TextStyle(
+            fontFamily: 'Itim', fontSize: 12, fontStyle: FontStyle.italic),
+      );
+    }
+
+    final int maxAvatars = 3;
+    final int extraCount = contributors.length - maxAvatars;
+
+    return Row(
+      children: [
+        ...contributors.take(maxAvatars).map((c) {
+          return Padding(
+            padding: const EdgeInsets.only(right: 4.0),
+            child: Tooltip(
+              message: '${c.name} (levando ${c.quantityTaken})',
+              child: CircleAvatar(
+                radius: 16,
+                backgroundImage: (c.photoUrl != null && c.photoUrl!.isNotEmpty)
+                    ? NetworkImage(c.photoUrl!)
+                    : null,
+                backgroundColor: const Color.fromARGB(255, 230, 210, 185),
+                child: (c.photoUrl == null || c.photoUrl!.isEmpty)
+                    ? const Icon(Icons.person,
+                        size: 20, color: Color.fromARGB(255, 63, 39, 28))
+                    : null,
+              ),
+            ),
+          );
+        }),
+        if (extraCount > 0)
+          Padding(
+            padding: const EdgeInsets.only(left: 4.0),
+            child: Text(
+              '+$extraCount',
+              style: const TextStyle(
+                  fontFamily: 'Itim',
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildInteractiveItemsList() {
+    if (_items.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Center(
+          child: Text(
+            'Nenhum item na lista.',
+            style: TextStyle(fontFamily: 'Itim', fontStyle: FontStyle.italic),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: _items.map((item) {
+        final int total = item.totalQuantity;
+        final int claimed = item.quantityClaimed;
+        final int available = item.quantityAvailable;
+        final double progress = total > 0 ? (claimed / total) : 0;
+        final bool isFullyClaimed = available == 0;
+
+        Contributor? myClaim;
+        try {
+          myClaim =
+              item.contributors.firstWhere((c) => c.uid == _currentUser?.uid);
+        } catch (e) {
+          myClaim = null;
+        }
+        final bool iAmAContributor = myClaim != null;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Container(
+            padding: const EdgeInsets.all(12.0),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.02),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.name,
+                        style: const TextStyle(
+                            fontFamily: 'Itim',
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    if (iAmAContributor)
+                      IconButton(
+                        icon: Icon(Icons.close_rounded,
+                            color: Colors.red.shade700),
+                        tooltip:
+                            'Liberar minha parte (${myClaim!.quantityTaken}x)',
+                        onPressed: () async {
+                          if (_currentUser == null) return;
+                          await _eventService.releaseMyClaim(
+                              _eventId, item.name, _currentUser!);
+                          _refreshEventData();
+                        },
+                      )
+                    else if (!isFullyClaimed)
+                      IconButton(
+                        icon: Icon(Icons.add_shopping_cart,
+                            color: Colors.green.shade700),
+                        tooltip: 'Eu levo!',
+                        onPressed: () {
+                          _showClaimQuantityDialog(item);
+                        },
+                      )
+                    else
+                      Icon(Icons.check_circle, color: Colors.grey.shade400),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 12,
+                    backgroundColor: Colors.grey.shade300,
+                    color: const Color.fromARGB(255, 211, 173, 92),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '$claimed / $total Levados',
+                  style: const TextStyle(
+                      fontFamily: 'Itim',
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Color.fromARGB(255, 63, 39, 28)),
+                ),
+                const SizedBox(height: 12),
+                _buildContributorAvatars(item.contributors),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // --- O MÉTODO BUILD() PRINCIPAL ---
   @override
   Widget build(BuildContext context) {
-    // Formata a data de criação
     final Timestamp? createdAt = _eventData['createdAt'];
     final String formattedCreationDate = createdAt != null
         ? DateFormat('dd/MM/yyyy').format(createdAt.toDate())
         : 'Indefinida';
 
     return Scaffold(
-      // 6. AppBar com o mesmo estilo
       backgroundColor: const Color.fromARGB(255, 230, 210, 185),
       appBar: AppBar(
         foregroundColor: const Color.fromARGB(255, 63, 39, 28),
@@ -131,7 +627,18 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               fontSize: 30),
         ),
         actions: [
-          // 7. Botão de Excluir movido para o AppBar
+          if (_eventData['hostId'] == _currentUser?.uid)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined,
+                  color: Color.fromARGB(255, 63, 39, 28), size: 26),
+              onPressed: _navigateToEditScreen,
+            ),
+          if (_eventData['hostId'] == _currentUser?.uid)
+            IconButton(
+              icon: const Icon(Icons.share,
+                  color: Color.fromARGB(255, 63, 39, 28), size: 28),
+              onPressed: _showInviteOptionsBottomSheet,
+            ),
           IconButton(
             icon: Icon(Icons.delete_outline,
                 color: Colors.red.shade700, size: 28),
@@ -139,7 +646,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           ),
         ],
       ),
-      // 8. Body com o background e SingleChildScrollView
       body: Container(
         decoration: const BoxDecoration(
           image: DecorationImage(
@@ -178,9 +684,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 20),
-
               // --- Card da Lista de Itens ---
               Card(
                 elevation: 4.0,
@@ -203,8 +707,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       ),
                       const SizedBox(height: 10),
                       const Divider(),
-
-                      // 9. A lista de itens interativa (lógica movida do pop-up)
+                      // --- Chamada ao método de construir a lista ---
                       _buildInteractiveItemsList(),
                     ],
                   ),
@@ -214,131 +717,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  // 10. Widget que constrói a lista de itens interativa
-  Widget _buildInteractiveItemsList() {
-    if (_items.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Center(
-          child: Text(
-            'Nenhum item na lista.',
-            style: TextStyle(fontFamily: 'Itim', fontStyle: FontStyle.italic),
-          ),
-        ),
-      );
-    }
-
-    // Usamos Column em vez de ListView.builder, pois já estamos
-    // dentro de um SingleChildScrollView
-    return Column(
-      children: _items.map((item) {
-        final bool isAssigned = item.broughtBy != null;
-        final bool isMe = item.broughtBy == _currentUser?.uid;
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6.0),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: isMe
-                  ? Colors.green.withOpacity(0.05)
-                  : Colors.black.withOpacity(0.02),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                color: isMe
-                    ? Colors.green.shade200
-                    : Colors.grey.shade300,
-              ),
-            ),
-            child: Row(
-              children: [
-                // "Badge" de quantidade
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color.fromARGB(255, 230, 210, 185),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${item.quantity}x',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Color.fromARGB(255, 63, 39, 28),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Nome do item e quem leva
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.name,
-                        style:
-                            const TextStyle(fontFamily: 'Itim', fontSize: 16),
-                      ),
-                      if (isAssigned)
-                        Text(
-                          isMe
-                              ? "Você vai levar!"
-                              : "Por: ${item.broughtByName ?? 'Alguém'}",
-                          style: TextStyle(
-                              fontFamily: 'Itim',
-                              fontSize: 12,
-                              color: isMe
-                                  ? Colors.green.shade700
-                                  : Colors.blue.shade700,
-                              fontWeight: FontWeight.bold),
-                        ),
-                    ],
-                  ),
-                ),
-
-                // --- O BOTÃO DE ESCOLHER ---
-                if (isMe)
-                  // Se sou eu, botão de "Cancelar"
-                  IconButton(
-                    icon: Icon(Icons.close_rounded,
-                        color: Colors.red.shade700),
-                    onPressed: () async {
-                      await _eventService.unassignItem(_eventId, item.name);
-                      // 11. Atualiza o estado da página
-                      setState(() {
-                        item.broughtBy = null;
-                        item.broughtByName = null;
-                      });
-                    },
-                  )
-                else if (!isAssigned)
-                  // Se ninguém pegou, botão de "Pegar"
-                  IconButton(
-                    icon: Icon(Icons.add_shopping_cart,
-                        color: Colors.green.shade700),
-                    onPressed: () async {
-                      if (_currentUser == null) return;
-                      await _eventService.assignItemToUser(
-                          _eventId, item.name, _currentUser!);
-                      // 11. Atualiza o estado da página
-                      setState(() {
-                        item.broughtBy = _currentUser!.uid;
-                        item.broughtByName = _currentUser!.displayName ??
-                            _currentUser!.email;
-                      });
-                    },
-                  )
-                else
-                  // Se já foi pego por outro, ícone de "check"
-                  Icon(Icons.check_circle, color: Colors.grey.shade400),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
     );
   }
 }

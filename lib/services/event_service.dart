@@ -1,5 +1,5 @@
 // lib/services/event_service.dart
-
+import 'package:Olha_o_Role/models/contributor.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:Olha_o_Role/services/event_item.dart'; // Precisamos criar este modelo
@@ -22,6 +22,49 @@ class EventService {
             arrayContains: user.uid) // A mágica está aqui!
         .orderBy('createdAt', descending: true)
         .snapshots();
+  }
+
+  Future<void> inviteFriendToEvent(String eventId, String friendId) async {
+    try {
+      final eventRef = _firestore.collection('events').doc(eventId);
+
+      // FieldValue.arrayUnion() é a forma segura de adicionar um item
+      // a um array no Firestore, garantindo que não haja duplicatas.
+      await eventRef.update({
+        'participants': FieldValue.arrayUnion([friendId])
+      });
+    } catch (e) {
+      print("Erro ao convidar amigo: $e");
+    }
+  }
+  Future<void> updateEvent(
+      String eventId,
+      String name,
+      String? description,
+      String? eventDate,
+      int? peopleCount,
+      List<EventItem> items) async {
+    try {
+      // Converte a lista de EventItem para uma lista de Mapas
+      final List<Map<String, dynamic>> itemsAsMaps =
+          items.map((item) => item.toMap()).toList();
+
+      // Pega a referência do documento
+      final eventRef = _firestore.collection('events').doc(eventId);
+
+      // Usa .update() para alterar os campos
+      await eventRef.update({
+        'name': name,
+        'description': description,
+        'eventDate': eventDate,
+        'peopleCount': peopleCount,
+        'items': itemsAsMaps,
+        // Nota: Não atualizamos o host, data de criação ou participantes aqui.
+      });
+    } catch (e) {
+      print("Erro ao ATUALIZAR evento: $e");
+      rethrow; // Lança o erro para a tela tratar
+    }
   }
 
   /// Cria um novo evento no Firestore
@@ -69,68 +112,130 @@ class EventService {
       print("Erro ao excluir evento: $e");
     }
   }
+// (SUBSTITUA ESTE MÉTODO INTEIRO)
 
-  /// Atribui um item a um usuário (a sua nova feature!)
-  Future<void> assignItemToUser(
-      String eventId, String itemName, User user) async {
+  /// Reivindica uma 'porção' de um item (ex: 2 dos 10 refrigerantes)
+  /// Usa uma transação para garantir segurança contra 'disputas'
+  Future<String> claimItemPortion(String eventId, String itemName,
+      int quantityToClaim, User user) async {
+    final eventRef = _firestore.collection('events').doc(eventId);
+
     try {
-      final eventRef = _firestore.collection('events').doc(eventId);
-      final docSnap = await eventRef.get();
+      await _firestore.runTransaction((transaction) async {
+        final docSnap = await transaction.get(eventRef);
 
-      if (!docSnap.exists) {
-        throw Exception('Evento não encontrado');
-      }
+        if (!docSnap.exists) {
+          throw Exception('Evento não encontrado');
+        }
 
-      // Pega a lista de itens atual
-      List<dynamic> items = docSnap.data()?['items'] ?? [];
+        // Pega a lista de itens atual
+        final eventData = docSnap.data() as Map<String, dynamic>;
+        final List<EventItem> items =
+            (eventData['items'] as List<dynamic>? ?? [])
+                .map((map) => EventItem.fromMap(map))
+                .toList();
 
-      // Converte para um tipo que podemos modificar
-      List<Map<String, dynamic>> modifiableItems =
-          List<Map<String, dynamic>>.from(items);
+        // Encontra o item específico que queremos alterar
+        final int itemIndex = items.indexWhere((item) => item.name == itemName);
+        if (itemIndex == -1) {
+          throw Exception('Item não encontrado na lista');
+        }
 
-      // Encontra o item pelo nome
-      int itemIndex =
-          modifiableItems.indexWhere((item) => item['name'] == itemName);
+        final EventItem item = items[itemIndex];
 
-      if (itemIndex != -1) {
-        // Atualiza os campos do item
-        modifiableItems[itemIndex]['broughtBy'] = user.uid;
-        modifiableItems[itemIndex]['broughtByName'] =
-            user.displayName ?? user.email;
-      }
+        // --- Lógica de Validação ---
+        final int available = item.quantityAvailable;
+        if (quantityToClaim > available) {
+          throw Exception(
+              'Apenas $available itens estão disponíveis. Você tentou pegar $quantityToClaim.');
+        }
 
-      // Salva a lista de itens *inteira* de volta no documento
-      await eventRef.update({'items': modifiableItems});
+        // --- INÍCIO DA CORREÇÃO ---
+        
+        // Verifica se o usuário já está na lista
+        final int existingContributorIndex =
+            item.contributors.indexWhere((c) => c.uid == user.uid);
+
+        if (existingContributorIndex != -1) {
+          // Se já existe, ATUALIZA A QUANTIDADE
+          final existingContributor = item.contributors[existingContributorIndex];
+          final int newQuantity =
+              existingContributor.quantityTaken + quantityToClaim;
+
+          // Cria um NOVO objeto Contributor com a soma
+          final updatedContributor = Contributor(
+            uid: existingContributor.uid,
+            name: existingContributor.name,
+            photoUrl: existingContributor.photoUrl,
+            quantityTaken: newQuantity, // A nova quantidade somada
+          );
+
+          // Substitui o antigo pelo novo na lista
+          item.contributors[existingContributorIndex] = updatedContributor;
+        } else {
+          // Se não existe, ADICIONA um novo
+          final newContributor = Contributor(
+            uid: user.uid,
+            name: user.displayName ?? user.email ?? 'Usuário',
+            photoUrl: user.photoURL,
+            quantityTaken: quantityToClaim, // A quantidade inicial
+          );
+          item.contributors.add(newContributor);
+        }
+        
+        // --- FIM DA CORREÇÃO ---
+
+        // Atualiza o item dentro da lista de itens
+        items[itemIndex] = item;
+
+        // Converte a lista de EventItem de volta para lista de Mapas
+        final List<Map<String, dynamic>> itemsAsMaps =
+            items.map((i) => i.toMap()).toList();
+
+        // Salva a lista de itens *inteira* de volta no documento
+        transaction.update(eventRef, {'items': itemsAsMaps});
+      });
+      return "Item reivindicado com sucesso!";
     } catch (e) {
-      print("Erro ao atribuir item: $e");
+      print("Erro ao reivindicar item: $e");
+      return "Erro: ${e.toString()}";
     }
   }
 
-  /// Desatribui um item (caso o usuário desista)
-  Future<void> unassignItem(String eventId, String itemName) async {
+  /// Libera a 'porção' de um item que o usuário atual pegou
+  Future<String> releaseMyClaim(String eventId, String itemName, User user) async {
+    final eventRef = _firestore.collection('events').doc(eventId);
+
     try {
-      final eventRef = _firestore.collection('events').doc(eventId);
-      final docSnap = await eventRef.get();
+      await _firestore.runTransaction((transaction) async {
+        final docSnap = await transaction.get(eventRef);
+        if (!docSnap.exists) {
+          throw Exception('Evento não encontrado');
+        }
 
-      if (!docSnap.exists) {
-        throw Exception('Evento não encontrado');
-      }
+        final eventData = docSnap.data() as Map<String, dynamic>;
+        final List<EventItem> items =
+            (eventData['items'] as List<dynamic>? ?? [])
+                .map((map) => EventItem.fromMap(map))
+                .toList();
 
-      List<dynamic> items = docSnap.data()?['items'] ?? [];
-      List<Map<String, dynamic>> modifiableItems =
-          List<Map<String, dynamic>>.from(items);
-      int itemIndex =
-          modifiableItems.indexWhere((item) => item['name'] == itemName);
+        final int itemIndex = items.indexWhere((item) => item.name == itemName);
+        if (itemIndex == -1) {
+          throw Exception('Item não encontrado');
+        }
 
-      if (itemIndex != -1) {
-        // Apenas limpa os campos
-        modifiableItems[itemIndex]['broughtBy'] = null;
-        modifiableItems[itemIndex]['broughtByName'] = null;
-      }
+        // Remove o contribuidor da lista (pelo UID)
+        items[itemIndex].contributors.removeWhere((c) => c.uid == user.uid);
 
-      await eventRef.update({'items': modifiableItems});
+        // Salva a lista de itens atualizada de volta no Firestore
+        final List<Map<String, dynamic>> itemsAsMaps =
+            items.map((i) => i.toMap()).toList();
+        transaction.update(eventRef, {'items': itemsAsMaps});
+      });
+      return "Item liberado com sucesso!";
     } catch (e) {
-      print("Erro ao desatribuir item: $e");
+      print("Erro ao liberar item: $e");
+      return "Erro: ${e.toString()}";
     }
   }
 }
