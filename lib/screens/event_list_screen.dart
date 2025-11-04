@@ -11,6 +11,7 @@ import 'package:intl/intl.dart'; // Para formatar datas
 import 'create_event_screen.dart';
 import 'join_event_screen.dart';
 import 'event_detail_screen.dart';
+import 'friends_screen.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -316,15 +317,21 @@ class _EventListScreenState extends State<EventListScreen> {
                         );
                       },
                     ),
-                    const ListTile(
-                      leading: Icon(Icons.people_outline, size: 28),
-                      title: Text('Amigos',
-                          style: TextStyle(
-                              fontSize: 18,
-                              decoration: TextDecoration.lineThrough)),
-                      trailing: Text("Em Desenvolvimento",
-                          style: TextStyle(fontSize: 12)),
-                    ),
+                    ListTile( // <-- Removido o 'const'
+                  leading: const Icon(Icons.people_outline, size: 28),
+                  title: const Text('Amigos',
+                      style: TextStyle(
+                          fontSize: 18)), // <-- Removido o lineThrough
+                  // Removido o trailing
+                  onTap: () { // <-- ADICIONADO O ONTAP
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const FriendsScreen(),
+                      ),
+                    );
+                  },
+                ),
                   ],
                 ),
               ),
