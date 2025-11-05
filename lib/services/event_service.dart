@@ -201,7 +201,79 @@ class EventService {
       return "Erro: ${e.toString()}";
     }
   }
+  /// Retorna um Stream de convites de evento PENDENTES.
+  Stream<QuerySnapshot> getEventInvitesStream() {
+    final User? user = _auth.currentUser;
+    if (user == null) return const Stream.empty();
+    
+    return _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('event_invites')
+        .orderBy('sentAt', descending: true)
+        .snapshots();
+  }
 
+  /// Anfitrião envia um convite de evento para um amigo.
+  Future<void> sendEventInvite({
+    required String eventId,
+    required Map<String, dynamic> eventData, // Dados do evento
+    required String friendId, // ID do amigo a ser convidado
+  }) async {
+    if (_auth.currentUser == null) return;
+    
+    // Cria o documento de convite na sub-coleção DO AMIGO
+    await _firestore
+        .collection('users')
+        .doc(friendId)
+        .collection('event_invites')
+        .doc(eventId) // O ID do doc é o ID do evento
+        .set({
+      'eventName': eventData['name'],
+      'eventDate': eventData['eventDate'],
+      'hostName': eventData['hostName'],
+      'sentAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Convidado ACEITA um convite de evento.
+  Future<void> acceptEventInvite(QueryDocumentSnapshot invite) async {
+    final User? user = _auth.currentUser;
+    if (user == null) return;
+
+    final String eventId = invite.id;
+    final String myUid = user.uid;
+
+    WriteBatch batch = _firestore.batch();
+
+    // 1. Adiciona o usuário ao array 'participants' do evento principal
+    // (A nova regra de segurança PERMITE esta operação)
+    batch.update(
+      _firestore.collection('events').doc(eventId),
+      {
+        'participants': FieldValue.arrayUnion([myUid])
+      },
+    );
+
+    // 2. Exclui o convite pendente
+    batch.delete(invite.reference);
+
+    // Executa a transação
+    await batch.commit();
+  }
+
+  /// Convidado RECUSA um convite de evento.
+  Future<void> declineEventInvite(String inviteId) async {
+    final User? user = _auth.currentUser;
+    if (user == null) return;
+
+    await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('event_invites')
+        .doc(inviteId)
+        .delete();
+  }
   /// Libera a 'porção' de um item que o usuário atual pegou
   Future<String> releaseMyClaim(String eventId, String itemName, User user) async {
     final eventRef = _firestore.collection('events').doc(eventId);

@@ -1,5 +1,3 @@
-// event_list_screen.dart (VERSÃO FIRESTORE)
-
 import 'package:Olha_o_Role/auth/auth_service.dart';
 import 'package:Olha_o_Role/services/event_item.dart';
 import 'package:Olha_o_Role/services/event_service.dart';
@@ -11,6 +9,7 @@ import 'create_event_screen.dart';
 import 'join_event_screen.dart';
 import 'event_detail_screen.dart';
 import 'friends_screen.dart';
+import '/services/friends_services.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -23,6 +22,7 @@ class _EventListScreenState extends State<EventListScreen> {
   // Nossos novos serviços
   final AuthService _authService = AuthService();
   final EventService _eventService = EventService();
+  final FriendsService _friendsService = FriendsService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final User? _currentUser = FirebaseAuth.instance.currentUser;
 
@@ -304,30 +304,53 @@ class _EventListScreenState extends State<EventListScreen> {
                         );
                       },
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.arrow_forward, size: 28),
-                      title: const Text('Ingressar em um evento',
+                    StreamBuilder<QuerySnapshot>(
+                      stream: _eventService.getEventInvitesStream(),
+                      builder: (context, snapshot) {
+                        final bool hasInvites =
+                            snapshot.hasData && snapshot.data!.docs.isNotEmpty;
+
+                        return ListTile(
+                          leading: Badge(
+                            // O Badge (ponto vermelho)
+                            isLabelVisible: hasInvites,
+                            child: const Icon(Icons.arrow_forward, size: 28),
+                          ),
+                          title: const Text('Ingressar em um evento',
+                              style: TextStyle(fontSize: 18)),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) => const JoinEventScreen()),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  StreamBuilder<QuerySnapshot>(
+                  stream: _friendsService.getFriendInvitesStream(),
+                  builder: (context, snapshot) {
+                    // Verifica se há algum convite pendente
+                    final bool hasInvites =
+                        snapshot.hasData && snapshot.data!.docs.isNotEmpty;
+
+                    return ListTile(
+                      leading: Badge(
+                        // O Badge (ponto vermelho)
+                        isLabelVisible: hasInvites,
+                        child: const Icon(Icons.people_outline, size: 28),
+                      ),
+                      title: const Text('Amigos',
                           style: TextStyle(fontSize: 18)),
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (context) => const JoinEventScreen()),
+                            builder: (context) => const FriendsScreen(),
+                          ),
                         );
                       },
-                    ),
-                    ListTile( // <-- Removido o 'const'
-                  leading: const Icon(Icons.people_outline, size: 28),
-                  title: const Text('Amigos',
-                      style: TextStyle(
-                          fontSize: 18)), // <-- Removido o lineThrough
-                  // Removido o trailing
-                  onTap: () { // <-- ADICIONADO O ONTAP
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const FriendsScreen(),
-                      ),
                     );
                   },
                 ),

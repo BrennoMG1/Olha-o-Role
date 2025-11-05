@@ -424,20 +424,24 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                             foregroundColor: Colors.white,
                           ),
                           onPressed: () async {
-                            await _eventService.inviteFriendToEvent(
-                                _eventId, friendId);
-                            setState(() {
-                              _participants.add(friendId);
-                            });
+                            // Chama o novo método de enviar convite
+                            await _eventService.sendEventInvite(
+                              eventId: _eventId,
+                              eventData: _eventData, // Passa os dados do evento
+                              friendId: friendId,
+                            );
+                            
+                            
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('$friendName foi convidado!'),
-                                  backgroundColor: Colors.green,
+                                  content: Text('Convite enviado para $friendName!'),
+                                  backgroundColor: Colors.blue,
                                 ),
                               );
                             }
                           },
+                          
                           child: const Text('Convidar',
                               style: TextStyle(fontFamily: 'Itim')),
                         ),
@@ -639,11 +643,12 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   color: Color.fromARGB(255, 63, 39, 28), size: 28),
               onPressed: _showInviteOptionsBottomSheet,
             ),
-          IconButton(
-            icon: Icon(Icons.delete_outline,
-                color: Colors.red.shade700, size: 28),
-            onPressed: _showDeleteConfirmationDialog,
-          ),
+          if (_eventData['hostId'] == _currentUser?.uid)
+            IconButton(
+              icon: Icon(Icons.delete_outline,
+                  color: Colors.red.shade700, size: 28),
+              onPressed: _showDeleteConfirmationDialog,
+            ),
         ],
       ),
       body: Container(
