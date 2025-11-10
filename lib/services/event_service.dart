@@ -140,23 +140,34 @@ class EventService {
     await batch.commit();
   }
 
-  Future<void> declineEventInvite(String inviteId) async {
+  Future<bool> declineEventInvite(String inviteId) async {
     final User? user = _auth.currentUser;
-    if (user == null) return;
-    WriteBatch batch = _firestore.batch();
-    final inviteRef = _firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('event_invites')
-        .doc(inviteId);
-    batch.delete(inviteRef);
-    final eventRef = _firestore.collection('events').doc(inviteId);
-    batch.update(eventRef, {
-      'pendingInvites': FieldValue.arrayRemove([user.uid])
-    });
-    await batch.commit();
-  }
+    if (user == null) return false;
 
+    try {
+      WriteBatch batch = _firestore.batch();
+
+      // 1. Remove o convite da lista do usuário
+      final inviteRef = _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('event_invites')
+          .doc(inviteId);
+      batch.delete(inviteRef);
+
+      // 2. Remove do 'pendingInvites' no evento
+      final eventRef = _firestore.collection('events').doc(inviteId);
+      batch.update(eventRef, {
+        'pendingInvites': FieldValue.arrayRemove([user.uid])
+      });
+
+      await batch.commit();
+      return true; // Sucesso
+    } catch (e) {
+      print("Erro ao recusar convite de evento: $e");
+      return false; // Falha
+    }
+  }
   // --- MÉTODOS DE INGRESSO E ITENS (CORRIGIDOS) ---
 
   Future<String> joinEventById(String eventId) async {
