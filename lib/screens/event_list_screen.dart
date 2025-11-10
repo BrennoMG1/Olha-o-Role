@@ -38,27 +38,51 @@ class _EventListScreenState extends State<EventListScreen> {
   // Carrega os dados do *usuário* (para o Drawer)
   Future<void> _loadCurrentUserData() async {
     if (_currentUser == null) return;
+    
     Map<String, dynamic>? docData;
+    final docRef = _firestore.collection('users').doc(_currentUser!.uid);
 
     try {
-      final docRef = _firestore.collection('users').doc(_currentUser!.uid);
       final docSnap = await docRef.get();
 
+      // --- Geração do friendCode (a mesma lógica de sempre) ---
+      // Geramos o código aqui, pois vamos precisar dele em ambos os casos.
+      final String fullHex = _currentUser!.uid.hashCode
+          .abs()
+          .toRadixString(16)
+          .padLeft(8, '0')
+          .toUpperCase();
+      final String friendCode = fullHex.substring(fullHex.length - 8);
+      // --- Fim da geração ---
+
       if (docSnap.exists) {
-        docData = docSnap.data();
+        // --- CASO 1: Documento EXISTE ---
+        docData = docSnap.data() as Map<String, dynamic>?;
+
         if (docData != null && (docData['friendCode'] == null)) {
-          final String fullHex = _currentUser!.uid.hashCode
-              .abs()
-              .toRadixString(16)
-              .padLeft(8, '0')
-              .toUpperCase();
-          final String friendCode = fullHex.substring(fullHex.length - 8);
+          // Documento existe, mas SEM friendCode (usuário antigo)
           await docRef.update({'friendCode': friendCode});
-          docData['friendCode'] = friendCode;
+          docData['friendCode'] = friendCode; // Atualiza localmente
         }
+      } else {
+        // --- CASO 2: Documento NÃO EXISTE ---
+        // (Usuário do Google "órfão" que pulou o setup)
+        
+        // Cria o mapa de dados do zero
+        docData = {
+          'uid': _currentUser!.uid,
+          'email': _currentUser!.email,
+          'displayName': _currentUser!.displayName ?? _currentUser!.email?.split('@')[0],
+          'photoURL': _currentUser!.photoURL,
+          'lastLogin': FieldValue.serverTimestamp(),
+          'friendCode': friendCode, // Adiciona o friendCode
+        };
+
+        // Cria o documento no Firestore
+        await docRef.set(docData, SetOptions(merge: true));
       }
     } catch (e) {
-      print("Erro ao buscar dados do usuário: $e");
+      print("Erro ao buscar/criar dados do usuário: $e");
     }
 
     if (mounted) {

@@ -213,27 +213,64 @@ class EventService {
         .orderBy('sentAt', descending: true)
         .snapshots();
   }
+  Future<String> joinEventById(String eventId) async {
+    final user = _auth.currentUser;
+    if (user == null) return "Usuário não logado.";
+
+    try {
+      final eventRef = _firestore.collection('events').doc(eventId.trim());
+      
+      // Verifica se o evento existe
+      final docSnap = await eventRef.get();
+      if (!docSnap.exists) {
+        return "Erro: Evento não encontrado.";
+      }
+      
+      // Adiciona o usuário ao array 'participants'
+      // A regra de segurança que vamos adicionar permitirá isso.
+      await eventRef.update({
+        'participants': FieldValue.arrayUnion([user.uid])
+      });
+      return "Sucesso"; // Retorna sucesso
+      
+    } catch (e) {
+      print("Erro ao ingressar com ID: $e");
+      return "Erro: Falha ao ingressar no evento.";
+    }
+  }
 
   /// Anfitrião envia um convite de evento para um amigo.
-  Future<void> sendEventInvite({
+ Future<void> sendEventInvite({
     required String eventId,
-    required Map<String, dynamic> eventData, // Dados do evento
-    required String friendId, // ID do amigo a ser convidado
+    required Map<String, dynamic> eventData, 
+    required String friendId,
   }) async {
     if (_auth.currentUser == null) return;
-    
-    // Cria o documento de convite na sub-coleção DO AMIGO
-    await _firestore
+
+    WriteBatch batch = _firestore.batch();
+
+    // 1. Cria o convite na sub-coleção do amigo (como antes)
+    final inviteRef = _firestore
         .collection('users')
         .doc(friendId)
         .collection('event_invites')
-        .doc(eventId) // O ID do doc é o ID do evento
-        .set({
+        .doc(eventId);
+
+    batch.set(inviteRef, {
       'eventName': eventData['name'],
       'eventDate': eventData['eventDate'],
       'hostName': eventData['hostName'],
       'sentAt': FieldValue.serverTimestamp(),
     });
+
+    // 2. (NOVO) Adiciona o ID do amigo ao array 'pendingInvites' no evento
+    final eventRef = _firestore.collection('events').doc(eventId);
+    batch.update(eventRef, {
+      'pendingInvites': FieldValue.arrayUnion([friendId])
+    });
+
+    // Executa as duas operações
+    await batch.commit();
   }
 
   /// Convidado ACEITA um convite de evento.
@@ -246,19 +283,17 @@ class EventService {
 
     WriteBatch batch = _firestore.batch();
 
-    // 1. Adiciona o usuário ao array 'participants' do evento principal
-    // (A nova regra de segurança PERMITE esta operação)
-    batch.update(
-      _firestore.collection('events').doc(eventId),
-      {
-        'participants': FieldValue.arrayUnion([myUid])
-      },
-    );
+    // 1. Adiciona ao 'participants' (como antes)
+    final eventRef = _firestore.collection('events').doc(eventId);
+    batch.update(eventRef, {
+      'participants': FieldValue.arrayUnion([myUid]),
+      // 2. (NOVO) Remove do 'pendingInvites'
+      'pendingInvites': FieldValue.arrayRemove([myUid])
+    });
 
-    // 2. Exclui o convite pendente
+    // 3. Exclui o convite pendente (como antes)
     batch.delete(invite.reference);
 
-    // Executa a transação
     await batch.commit();
   }
 
@@ -267,12 +302,23 @@ class EventService {
     final User? user = _auth.currentUser;
     if (user == null) return;
 
-    await _firestore
+    WriteBatch batch = _firestore.batch();
+
+    // 1. Remove o convite da lista do usuário
+    final inviteRef = _firestore
         .collection('users')
         .doc(user.uid)
         .collection('event_invites')
-        .doc(inviteId)
-        .delete();
+        .doc(inviteId);
+    batch.delete(inviteRef);
+
+    // 2. (NOVO) Remove do 'pendingInvites' no evento
+    final eventRef = _firestore.collection('events').doc(inviteId);
+    batch.update(eventRef, {
+      'pendingInvites': FieldValue.arrayRemove([user.uid])
+    });
+
+    await batch.commit();
   }
   /// Libera a 'porção' de um item que o usuário atual pegou
   Future<String> releaseMyClaim(String eventId, String itemName, User user) async {

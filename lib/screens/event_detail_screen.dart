@@ -25,12 +25,15 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   final EventService _eventService = EventService();
   final FriendsService _friendsService = FriendsService();
   final User? _currentUser = FirebaseAuth.instance.currentUser;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   late String _eventName;
   late String _eventId;
   late Map<String, dynamic> _eventData;
   late List<EventItem> _items;
   late List<String> _participants;
+  late Set<String> _pendingInviteFriendIds;
+  final Set<String> _locallyInvitedFriendIds = {};
 
   // --- Métodos de Ciclo de Vida (initState) ---
   @override
@@ -54,6 +57,125 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         .toList();
 
     _participants = List<String>.from(_eventData['participants'] ?? []);
+
+    // --- ATUALIZAÇÃO AQUI ---
+    // Carrega os IDs dos convites pendentes do documento do evento
+    _pendingInviteFriendIds =
+        Set<String>.from(_eventData['pendingInvites'] ?? []);
+  }
+
+/// 1. MÉTODO PARA BUSCAR OS DADOS DOS PARTICIPANTES
+  /// Busca todos os documentos de usuário da lista de UIDs
+  Future<List<DocumentSnapshot>> _fetchParticipantDetails() async {
+    // Cria uma lista de "Futures" (tarefas)
+    final futures = _participants.map((uid) {
+      return _firestore.collection('users').doc(uid).get();
+    }).toList();
+
+    // Executa todas as tarefas em paralelo e espera o resultado
+    final results = await Future.wait(futures);
+    
+    // Retorna apenas os documentos que existem
+    return results.where((doc) => doc.exists).toList();
+  }
+
+  /// 2. O WIDGET DO CARD DE PARTICIPANTES
+  /// Constrói o card principal que usa um FutureBuilder
+  Widget _buildParticipantsCard() {
+    return Card(
+      elevation: 4.0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12.0),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '👥 Participantes (${_participants.length})',
+              style: const TextStyle(
+                fontFamily: 'Itim',
+                fontWeight: FontWeight.bold,
+                fontSize: 22,
+                color: Color.fromARGB(255, 63, 39, 28),
+              ),
+            ),
+            const Divider(height: 20),
+            
+            // FutureBuilder para carregar os perfis
+            FutureBuilder<List<DocumentSnapshot>>(
+              future: _fetchParticipantDetails(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                
+                if (snapshot.hasError || !snapshot.hasData) {
+                  return const Text('Erro ao carregar participantes.');
+                }
+
+                final participantDocs = snapshot.data!;
+                
+                if (participantDocs.isEmpty) {
+                  return const Text('Nenhum participante encontrado.');
+                }
+
+                return Column(
+                  children: participantDocs.map((doc) {
+                    // Chama o helper para construir cada linha
+                    return _buildParticipantTile(doc);
+                  }).toList(),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 3. O WIDGET DE CADA LINHA DE PARTICIPANTE
+  /// Constrói o ListTile (ícone + nome) para um único participante
+  Widget _buildParticipantTile(DocumentSnapshot userDoc) {
+    final data = userDoc.data() as Map<String, dynamic>;
+    final bool isHost = (userDoc.id == _eventData['hostId']);
+
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 20,
+        backgroundImage: (data['photoURL'] != null && data['photoURL']!.isNotEmpty)
+            ? NetworkImage(data['photoURL']!)
+            : null,
+        backgroundColor: const Color.fromARGB(255, 230, 210, 185),
+        child: (data['photoURL'] == null || data['photoURL']!.isEmpty)
+            ? const Icon(Icons.person,
+                size: 24, color: Color.fromARGB(255, 63, 39, 28))
+            : null,
+      ),
+      title: Text(
+        data['displayName'] ?? 'Usuário',
+        style: const TextStyle(fontFamily: 'Itim', fontSize: 16),
+      ),
+      trailing: isHost
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color.fromARGB(255, 211, 173, 92),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                'Anfitrião',
+                style: TextStyle(
+                  fontFamily: 'Itim',
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Color.fromARGB(255, 63, 39, 28),
+                ),
+              ),
+            )
+          : null,
+    );
   }
 
   Future<void> _refreshEventData() async {
@@ -355,104 +477,116 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   }
 
   Widget _buildInviteFriendsListSection() {
-    if (_eventData['hostId'] != _currentUser?.uid) {
-      return Container();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Convidar Amigos do App',
-          style: TextStyle(
-            fontFamily: 'Itim',
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Color.fromARGB(255, 63, 39, 28),
-          ),
-        ),
-        const SizedBox(height: 10),
-        StreamBuilder<QuerySnapshot>(
-          stream: _friendsService.getFriendsStream(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return const Text('Erro ao carregar amigos');
-            }
-            final friends = snapshot.data?.docs ?? [];
-
-            if (friends.isEmpty) {
-              return const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Text(
-                    'Você não tem amigos adicionados para convidar.',
-                    style: TextStyle(fontFamily: 'Itim', fontSize: 16),
-                  ),
-                ),
-              );
-            }
-
-            return Column(
-              children: friends.map((friendDoc) {
-                final friendId = friendDoc.id;
-                final friendData = friendDoc.data() as Map<String, dynamic>;
-                final friendName = friendData['displayName'] ?? 'Amigo';
-
-                final bool isAlreadyInvited = _participants.contains(friendId);
-
-                return ListTile(
-                  leading: const Icon(Icons.person,
-                      color: Color.fromARGB(255, 63, 39, 28)),
-                  title: Text(friendName,
-                      style: const TextStyle(fontFamily: 'Itim')),
-                  trailing: isAlreadyInvited
-                      ? TextButton(
-                          onPressed: null,
-                          child: Text(
-                            'Já no evento',
-                            style: TextStyle(
-                                fontFamily: 'Itim', color: Colors.grey.shade600),
-                          ),
-                        )
-                      : ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                const Color.fromARGB(255, 63, 39, 28),
-                            foregroundColor: Colors.white,
-                          ),
-                          onPressed: () async {
-                            // Chama o novo método de enviar convite
-                            await _eventService.sendEventInvite(
-                              eventId: _eventId,
-                              eventData: _eventData, // Passa os dados do evento
-                              friendId: friendId,
-                            );
-                            
-                            
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Convite enviado para $friendName!'),
-                                  backgroundColor: Colors.blue,
-                                ),
-                              );
-                            }
-                          },
-                          
-                          child: const Text('Convidar',
-                              style: TextStyle(fontFamily: 'Itim')),
-                        ),
-                );
-              }).toList(),
-            );
-          },
-        ),
-      ],
-    );
+  if (_eventData['hostId'] != _currentUser?.uid) {
+    return Container();
   }
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Convidar Amigos do App',
+        style: TextStyle(
+          fontFamily: 'Itim',
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+          color: Color.fromARGB(255, 63, 39, 28),
+        ),
+      ),
+      const SizedBox(height: 10),
+      StreamBuilder<QuerySnapshot>(
+        stream: _friendsService.getFriendsStream(),
+        builder: (context, snapshot) {
+          // ... (o código de loading, error, e 'friends.isEmpty' é o mesmo) ...
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return const Text('Erro ao carregar amigos');
+          }
+          final friends = snapshot.data?.docs ?? [];
+
+          if (friends.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Text(
+                  'Você não tem amigos adicionados para convidar.',
+                  style: TextStyle(fontFamily: 'Itim', fontSize: 16),
+                ),
+              ),
+            );
+          }
+
+          return Column(
+            children: friends.map((friendDoc) {
+              final friendId = friendDoc.id;
+              final friendData = friendDoc.data() as Map<String, dynamic>;
+              final friendName = friendData['displayName'] ?? 'Amigo';
+
+              // --- LÓGICA DE VALIDAÇÃO ATUALIZADA ---
+              final bool isAlreadyInvited = _participants.contains(friendId);
+
+              // Verifica se o amigo está na lista de PENDENTES
+              final bool isPending = _pendingInviteFriendIds.contains(friendId);
+              // --- FIM DA LÓGICA ATUALIZADA ---
+
+              return ListTile(
+                leading: const Icon(Icons.person,
+                    color: Color.fromARGB(255, 63, 39, 28)),
+                title: Text(friendName,
+                    style: const TextStyle(fontFamily: 'Itim')),
+
+                // --- WIDGET TRAILING ATUALIZADO ---
+                trailing: isAlreadyInvited
+                    ? TextButton(
+                        onPressed: null,
+                        child: Text(
+                          'Já no evento',
+                          style: TextStyle(
+                              fontFamily: 'Itim',
+                              color: Colors.grey.shade600),
+                        ),
+                      )
+                    : isPending // <-- USA A NOVA VARIÁVEL
+                        ? TextButton(
+                            onPressed: null,
+                            child: const Text(
+                              'Convidado!',
+                              style: TextStyle(
+                                  fontFamily: 'Itim',
+                                  color: Colors.blue),
+                            ),
+                          )
+                        : ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  const Color.fromARGB(255, 63, 39, 28),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () async {
+                              await _eventService.sendEventInvite(
+                                eventId: _eventId,
+                                eventData: _eventData,
+                                friendId: friendId,
+                              );
+
+                              // ATUALIZA A UI LOCAL
+                              setState(() {
+                                _pendingInviteFriendIds.add(friendId);
+                              });
+                            },
+                            child: const Text('Convidar',
+                                style: TextStyle(fontFamily: 'Itim')),
+                          ),
+              );
+            }).toList(),
+          );
+        },
+      ),
+    ],
+  );
+}
 
   Widget _buildContributorAvatars(List<Contributor> contributors) {
     if (contributors.isEmpty) {
@@ -643,7 +777,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   color: Color.fromARGB(255, 63, 39, 28), size: 28),
               onPressed: _showInviteOptionsBottomSheet,
             ),
-          if (_eventData['hostId'] == _currentUser?.uid)
+          if (_eventData['hostId'] == _currentUser?.uid) // Botão Excluir (com 'if')
             IconButton(
               icon: Icon(Icons.delete_outline,
                   color: Colors.red.shade700, size: 28),
@@ -689,6 +823,8 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 20),
+              _buildParticipantsCard(),
               const SizedBox(height: 20),
               // --- Card da Lista de Itens ---
               Card(

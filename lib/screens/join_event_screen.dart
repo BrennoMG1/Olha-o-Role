@@ -3,6 +3,7 @@
 import 'package:Olha_o_Role/services/event_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'qr_scanner_screen.dart'; // <-- 1. NOVO IMPORT
 
 class JoinEventScreen extends StatefulWidget {
   const JoinEventScreen({super.key});
@@ -13,7 +14,8 @@ class JoinEventScreen extends StatefulWidget {
 
 class _JoinEventScreenState extends State<JoinEventScreen> {
   final _eventIdController = TextEditingController();
-  final EventService _eventService = EventService(); // 1. Adiciona o serviço
+  final EventService _eventService = EventService();
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -21,12 +23,69 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
     super.dispose();
   }
 
-  void _joinWithId() {
-    // ... (sua lógica de ingressar com ID) ...
+  // --- 2. IMPLEMENTA O BOTÃO DE "INGRESSAR COM ID" ---
+  void _joinWithId() async {
+    if (_eventIdController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Insira um ID de evento.'),
+            backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    final String result =
+        await _eventService.joinEventById(_eventIdController.text);
+    setState(() => _isLoading = false);
+
+    if (mounted) {
+      if (result == "Sucesso") {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Você ingressou no evento!'),
+              backgroundColor: Colors.green),
+        );
+        // Fecha a tela de "Ingressar" e a tela de "Detalhes"
+        // (Assume que você quer voltar para a lista principal)
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
-  void _scanQrCode() {
-    // ... (sua lógica de QR code) ...
+  // --- 3. IMPLEMENTA O BOTÃO DE "ESCANEAR" ---
+  void _scanQrCode() async {
+    // Navega para a tela de scanner e espera um resultado
+    final scannedValue = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+    );
+
+    if (scannedValue != null && mounted) {
+      // O QR Code que geramos é: 'olharole://EVENT_ID'
+      // Precisamos extrair apenas o EVENT_ID.
+      if (scannedValue.startsWith('olharole://')) {
+        final String eventId = scannedValue.substring('olharole://'.length);
+        setState(() {
+          _eventIdController.text = eventId;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('ID do Evento lido com sucesso!'),
+              backgroundColor: Colors.green),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('QR Code inválido.'),
+              backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   @override
@@ -57,13 +116,14 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // --- Card de Ingressar com ID (agora funcional) ---
               _buildJoinByIdCard(),
               const SizedBox(height: 20),
+              // --- Card de QR Code (agora funcional) ---
               _buildQrCodeCard(),
               const SizedBox(height: 30),
-              
-              // 2. Substitui a seção de convites
-              _buildInvitationsSection(), 
+              // --- Seção de Convites (funcional) ---
+              _buildInvitationsSection(),
             ],
           ),
         ),
@@ -71,14 +131,12 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
     );
   }
 
+  // --- 4. ATUALIZA O CARD DE "INGRESSAR COM ID" ---
   Widget _buildJoinByIdCard() {
-    // ... (este widget não muda) ...
     return Card(
       elevation: 4.0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0),
-      ),
-      color: const Color.fromARGB(255, 245, 235, 220), // Cor de card sutil
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+      color: const Color.fromARGB(255, 245, 235, 220),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -105,17 +163,25 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
             ),
             const SizedBox(height: 12),
             ElevatedButton(
-              onPressed: _joinWithId,
+              onPressed: _isLoading ? null : _joinWithId, // <-- Chama a função
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color.fromARGB(
-                    255, 63, 39, 28), // Cor de botão principal
+                backgroundColor: const Color.fromARGB(255, 63, 39, 28),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
-              child: const Text(
-                'Entrar no Evento',
-                style: TextStyle(fontFamily: 'Itim', fontSize: 16),
-              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                    )
+                  : const Text(
+                      'Entrar no Evento',
+                      style: TextStyle(fontFamily: 'Itim', fontSize: 16),
+                    ),
             ),
           ],
         ),
@@ -123,13 +189,11 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
     );
   }
 
+  // --- 5. ATUALIZA O CARD DE "QR CODE" ---
   Widget _buildQrCodeCard() {
-    // ... (este widget não muda) ...
-     return Card(
+    return Card(
       elevation: 4.0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
       color: const Color.fromARGB(255, 245, 235, 220),
       child: ListTile(
         contentPadding:
@@ -153,13 +217,17 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
           style: TextStyle(fontFamily: 'Itim'),
         ),
         trailing: const Icon(Icons.arrow_forward_ios),
-        onTap: _scanQrCode,
+        onTap: _scanQrCode, // <-- Chama a função
       ),
     );
   }
 
-  // --- 3. SEÇÃO DE CONVITES ATUALIZADA (NÃO USA MAIS MOCK DATA) ---
+  // --- 6. (O RESTANTE DA SUA TELA) ---
+  // (Os métodos _buildInvitationsSection e _buildInvitationCard
+  // permanecem os mesmos da nossa última etapa)
+
   Widget _buildInvitationsSection() {
+    // ... (Cole o método _buildInvitationsSection da sua versão anterior)
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -176,8 +244,6 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
           ),
         ),
         const SizedBox(height: 10),
-
-        // --- StreamBuilder para convites de EVENTO ---
         StreamBuilder<QuerySnapshot>(
           stream: _eventService.getEventInvitesStream(),
           builder: (context, snapshot) {
@@ -223,8 +289,8 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
     );
   }
 
-  // --- 4. CARD DE CONVITE ATUALIZADO ---
   Widget _buildInvitationCard(QueryDocumentSnapshot invite) {
+    // ... (Cole o método _buildInvitationCard da sua versão anterior)
     final data = invite.data() as Map<String, dynamic>;
 
     return Card(
@@ -280,7 +346,8 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              icon: const Icon(Icons.check_circle, color: Colors.green, size: 30),
+              icon:
+                  const Icon(Icons.check_circle, color: Colors.green, size: 30),
               onPressed: () {
                 _eventService.acceptEventInvite(invite);
               },
