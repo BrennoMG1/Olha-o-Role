@@ -41,35 +41,42 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       _showError('As senhas não coincidem.');
       return;
     }
+    
+    // Validação extra (muito comum o Firebase reclamar disso)
+    if (_passwordController.text.length < 6) {
+      _showError('A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
 
     setState(() => _isLoading = true);
 
-    try {
-      // Tenta criar o usuário
-      final userCredential = await _authService.signUpWithEmailPassword(
-        _emailController.text,
-        _passwordController.text,
-      );
+    // Vamos chamar o serviço FORA de um try/catch, 
+    // pois ele já lida com os próprios erros (retornando null).
+    final userCredential = await _authService.signUpWithEmailPassword(
+      _emailController.text,
+      _passwordController.text,
+    );
 
-      // SUCESSO! Agora navega para a tela de perfil
-      if (userCredential != null && userCredential.user != null && mounted) {
-        // --- ESTA É A CORREÇÃO ---
-        // Passamos o userCredential.user para a ProfileSetupScreen
+    // Agora, verificamos se o resultado é nulo
+    if (mounted) {
+      if (userCredential != null && userCredential.user != null) {
+        // SUCESSO!
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (context) => ProfileSetupScreen(user: userCredential.user!),
           ),
         );
-        // -------------------------
+      } else {
+        // FALHA! O serviço retornou null.
+        // Damos um feedback genérico, já que o erro real foi impresso no console.
+        _showError(
+            'Falha ao registrar. Verifique o e-mail ou se a senha é válida.');
       }
-    } on FirebaseAuthException catch (e) {
-      _showError('Erro ao registrar: ${e.message}');
-    } catch (e) {
-      _showError('Ocorreu um erro: ${e.toString()}');
-    }
 
-    if (mounted) {
+      // O loading deve parar tanto em caso de sucesso (antes de navegar)
+      // quanto em caso de falha. Colocamos fora do "else".
+      // Mas como o "if" navega, só precisamos no "else" e no "finally" geral.
       setState(() => _isLoading = false);
     }
   }
