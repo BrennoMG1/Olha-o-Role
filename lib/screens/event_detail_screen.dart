@@ -35,7 +35,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   late Set<String> _pendingInviteFriendIds;
   final Set<String> _locallyInvitedFriendIds = {};
 
-  // --- Métodos de Ciclo de Vida (initState) ---
   @override
   void initState() {
     super.initState();
@@ -58,8 +57,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
 
     _participants = List<String>.from(_eventData['participants'] ?? []);
 
-    // --- ATUALIZAÇÃO AQUI ---
-    // Carrega os IDs dos convites pendentes do documento do evento
     _pendingInviteFriendIds =
         Set<String>.from(_eventData['pendingInvites'] ?? []);
   }
@@ -213,39 +210,80 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   // --- Métodos de Diálogo e BottomSheet ---
 
   Future<void> _showDeleteConfirmationDialog() async {
-    return showDialog<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: const Color.fromARGB(255, 230, 210, 185),
-          title: const Text('Confirmar Exclusão',
-              style: TextStyle(fontFamily: 'Itim')),
-          content: Text(
-              'Você tem certeza que deseja excluir o evento "$_eventName"?\nEsta ação não pode ser desfeita.',
-              style: const TextStyle(fontFamily: 'Itim')),
-          actions: <Widget>[
-            TextButton(
-              child:
-                  const Text('Cancelar', style: TextStyle(fontFamily: 'Itim')),
-              onPressed: () => Navigator.of(context).pop(),
+  return showDialog<void>(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        backgroundColor: const Color.fromARGB(255, 230, 210, 185),
+        title: const Text(
+          'Confirmar Exclusão',
+          style: TextStyle(fontFamily: 'Itim'),
+        ),
+        content: Text(
+          'Você tem certeza que deseja excluir o evento "$_eventName"?\nEsta ação não pode ser desfeita.',
+          style: const TextStyle(fontFamily: 'Itim'),
+        ),
+        actions: <Widget>[
+          TextButton(
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(fontFamily: 'Itim'),
             ),
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
-              child:
-                  const Text('Excluir', style: TextStyle(fontFamily: 'Itim')),
-              onPressed: () async {
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red.shade700,
+            ),
+            child: const Text(
+              'Excluir',
+              style: TextStyle(fontFamily: 'Itim'),
+            ),
+            onPressed: () async {
+              try {
+                // Mostra um indicador enquanto exclui (opcional)
+                showDialog(
+                  barrierDismissible: false,
+                  context: context,
+                  builder: (_) => const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+
                 await _eventService.deleteEvent(_eventId);
+
                 if (mounted) {
-                  Navigator.of(context).pop();
-                  Navigator.of(context).pop();
+                  Navigator.of(context)
+                    ..pop() // Fecha o loading
+                    ..pop() // Fecha o dialog
+                    ..pop(); // Fecha a tela do evento
                 }
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Evento excluído com sucesso!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                if (mounted) {
+                  Navigator.of(context).pop(); // Fecha o loading se houver erro
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Erro ao excluir evento: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
+
 
   void _showInviteOptionsBottomSheet() {
     showModalBottomSheet(

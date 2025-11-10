@@ -53,14 +53,13 @@ class _EventListScreenState extends State<EventListScreen> {
           .padLeft(8, '0')
           .toUpperCase();
       final String friendCode = fullHex.substring(fullHex.length - 8);
-      // --- Fim da geração ---
 
       if (docSnap.exists) {
         // --- CASO 1: Documento EXISTE ---
         docData = docSnap.data() as Map<String, dynamic>?;
 
         if (docData != null && (docData['friendCode'] == null)) {
-          // Documento existe, mas SEM friendCode (usuário antigo)
+
           await docRef.update({'friendCode': friendCode});
           docData['friendCode'] = friendCode; // Atualiza localmente
         }
@@ -92,42 +91,79 @@ class _EventListScreenState extends State<EventListScreen> {
     }
   }
 
-  // Diálogo de confirmação de exclusão (agora chama o EventService)
   Future<void> _showDeleteConfirmationDialog(
-      String eventId, String eventName) async {
-    return showDialog<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: const Color.fromARGB(255, 230, 210, 185),
-          title: const Text('Confirmar Exclusão',
-              style: TextStyle(fontFamily: 'Itim')),
-          content: Text(
-              'Você tem certeza que deseja excluir o evento "$eventName"?\nEsta ação não pode ser desfeita.',
-              style: const TextStyle(fontFamily: 'Itim')),
-          actions: <Widget>[
-            TextButton(
-              child:
-                  const Text('Cancelar', style: TextStyle(fontFamily: 'Itim')),
-              onPressed: () => Navigator.of(context).pop(),
+    String eventId, String eventName) async {
+  return showDialog<void>(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        backgroundColor: const Color.fromARGB(255, 230, 210, 185),
+        title: const Text(
+          'Confirmar Exclusão',
+          style: TextStyle(fontFamily: 'Itim'),
+        ),
+        content: Text(
+          'Você tem certeza que deseja excluir o evento "$eventName"?\nEsta ação não pode ser desfeita.',
+          style: const TextStyle(fontFamily: 'Itim'),
+        ),
+        actions: <Widget>[
+          TextButton(
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(fontFamily: 'Itim'),
             ),
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
-              child:
-                  const Text('Excluir', style: TextStyle(fontFamily: 'Itim')),
-              onPressed: () async {
-                // CHAMA O SERVIÇO DE EXCLUSÃO
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red.shade700,
+            ),
+            child: const Text(
+              'Excluir',
+              style: TextStyle(fontFamily: 'Itim'),
+            ),
+            onPressed: () async {
+              try {
+                showDialog(
+                  barrierDismissible: false,
+                  context: context,
+                  builder: (_) => const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+
                 await _eventService.deleteEvent(eventId);
+
+                if (mounted) {
+                  Navigator.of(context)
+                    ..pop()
+                    ..pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Evento excluído com sucesso!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
                 if (mounted) {
                   Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Erro ao excluir evento: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 }
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
+              }
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
+
 
   @override
   Widget build(BuildContext context) {

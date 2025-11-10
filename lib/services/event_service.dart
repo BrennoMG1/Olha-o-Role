@@ -1,14 +1,12 @@
-// lib/services/event_service.dart
 import 'package:Olha_o_Role/models/contributor.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:Olha_o_Role/services/event_item.dart'; // Precisamos criar este modelo
+import 'package:Olha_o_Role/services/event_item.dart';
 
 class EventService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  /// Retorna um Stream de eventos onde o usuário atual é participante.
   Stream<QuerySnapshot> getEventsStreamForUser() {
     final User? user = _auth.currentUser;
     if (user == null) {
@@ -19,7 +17,7 @@ class EventService {
     return _firestore
         .collection('events')
         .where('participants',
-            arrayContains: user.uid) // A mágica está aqui!
+            arrayContains: user.uid)
         .orderBy('createdAt', descending: true)
         .snapshots();
   }
@@ -112,10 +110,6 @@ class EventService {
       print("Erro ao excluir evento: $e");
     }
   }
-// (SUBSTITUA ESTE MÉTODO INTEIRO)
-
-  /// Reivindica uma 'porção' de um item (ex: 2 dos 10 refrigerantes)
-  /// Usa uma transação para garantir segurança contra 'disputas'
   Future<String> claimItemPortion(String eventId, String itemName,
       int quantityToClaim, User user) async {
     final eventRef = _firestore.collection('events').doc(eventId);
@@ -149,8 +143,6 @@ class EventService {
           throw Exception(
               'Apenas $available itens estão disponíveis. Você tentou pegar $quantityToClaim.');
         }
-
-        // --- INÍCIO DA CORREÇÃO ---
         
         // Verifica se o usuário já está na lista
         final int existingContributorIndex =
