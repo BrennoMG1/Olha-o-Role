@@ -213,6 +213,49 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
   }
 
+  Future<void> _showRemoveConfirmationDialog(
+      String friendId, String friendName) async { // <-- 1. Parâmetros friendId e friendName
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Remover Amigo', style: TextStyle(fontFamily: 'Itim')),
+          // 2. Use friendName aqui
+          content: Text(
+              'Você tem certeza que deseja remover $friendName de seus amigos?',
+              style: const TextStyle(fontFamily: 'Itim')),
+          actions: <Widget>[
+            TextButton(
+              child:
+                  const Text('Cancelar', style: TextStyle(fontFamily: 'Itim')),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+              child:
+                  const Text('Remover', style: TextStyle(fontFamily: 'Itim')),
+              onPressed: () async {
+                // 3. Use friendId aqui
+                final result = await _friendsService.removeFriend(friendId); 
+                if (mounted) {
+                  Navigator.of(context).pop(); // Fecha o diálogo
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result == "Sucesso"
+                          ? '$friendName foi removido.'
+                          : 'Falha: $result'),
+                      backgroundColor: result == "Sucesso" ? Colors.green : Colors.red,
+                    ),
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   /// Card para um Convite Pendente
   Widget _buildInvitationCard(String senderId, Map<String, dynamic> data) {
     final String senderName = data['senderName'] ?? 'Usuário';
@@ -328,6 +371,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   /// Card para um Amigo
   Widget _buildFriendCard(String friendId, Map<String, dynamic> data) {
+    final friendName = data['displayName'] ?? 'Amigo';
+
     return Card(
       elevation: 4.0,
       margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -339,7 +384,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
         leading: const Icon(Icons.person,
             size: 40, color: Color.fromARGB(255, 63, 39, 28)),
         title: Text(
-          data['displayName'] ?? 'Amigo',
+          friendName,
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -356,14 +401,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
         ),
         trailing: IconButton(
           icon: Icon(Icons.person_remove_outlined, color: Colors.red.shade700),
-          onPressed: () {
-            // Lógica de remover amigo (não implementada no service,
-            // mas é similar a aceitar/recusar)
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text('Remover amigo (não implementado)')),
-            );
-          },
+          // VVVV CORREÇÃO: Chama o diálogo e passa os dados VVVV
+          onPressed: () => _showRemoveConfirmationDialog(friendId, friendName),
         ),
       ),
     );
