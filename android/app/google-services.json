@@ -1,0 +1,76 @@
+{
+  "project_info": {
+    "project_number": "850589793785",
+    "project_id": "olha-o-role-app",
+    "storage_bucket": "olha-o-role-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:850589793785:android:33babaa448e9c5f6515128",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "850589793785-j199ohout6ss1chsjfguh1ckefpgopng.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpYD1G12ynQu11UJqv8gOCFFzJomCU1bs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "850589793785-j199ohout6ss1chsjfguh1ckefpgopng.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:850589793785:android:5053a1cc74de45c4515128",
+        "android_client_info": {
+          "package_name": "com.olhaorole.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "850589793785-j8j3j8gfrjftm3jgne601mmk31uh11g7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.olhaorole.app",
+            "certificate_hash": "95aa64bf719714d6388fdc14cd62f9cc485b8bdb"
+          }
+        },
+        {
+          "client_id": "850589793785-j199ohout6ss1chsjfguh1ckefpgopng.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpYD1G12ynQu11UJqv8gOCFFzJomCU1bs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "850589793785-j199ohout6ss1chsjfguh1ckefpgopng.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

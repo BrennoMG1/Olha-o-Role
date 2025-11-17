@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'models/event.dart'; // Importe seus modelos
-import 'screens/event_list_screen.dart';
-import 'screens/login_screen.dart';
+import 'package:firebase_core/firebase_core.dart'; // Importe o Firebase Core
+import 'firebase_options.dart'; // Importe as opções geradas
+import 'models/event.dart';
+import 'auth/auth_gate.dart'; // Importe o AuthGate
 
 void main() async {
-  // Garante que o Flutter está inicializado
+  // 1. Garante que o Flutter está pronto
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Inicializa o Hive
-  await Hive.initFlutter();
+  // 2. INICIALIZA O FIREBASE (Esta é a linha que corrige seu erro)
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
-  // Registra os adaptadores gerados
+  // 3. Inicializa o Hive
+  await Hive.initFlutter();
   Hive.registerAdapter(EventAdapter());
   Hive.registerAdapter(ItemAdapter());
 
@@ -26,9 +30,14 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Olha o Rolê',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        // Você pode manter seu tema aqui
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3D4A9C)),
+        useMaterial3: true,
       ),
-      home: const LoginScreen(),
+      debugShowCheckedModeBanner: false,
+      // 4. Inicia no AuthGate, e não mais na EventListScreen
+      home: const AuthGate(),
     );
   }
 }
+

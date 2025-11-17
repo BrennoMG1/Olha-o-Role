@@ -1,7 +1,16 @@
+import 'package:Olha_o_Role/auth/auth_service.dart';
+import 'package:Olha_o_Role/services/event_item.dart';
+import 'package:Olha_o_Role/services/event_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter/services.dart';
 import 'create_event_screen.dart';
-import '../models/event.dart';
+import 'join_event_screen.dart';
+import 'event_detail_screen.dart';
+import 'friends_screen.dart';
+import '/services/friends_services.dart';
+import 'profile_screen.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -11,67 +20,108 @@ class EventListScreen extends StatefulWidget {
 }
 
 class _EventListScreenState extends State<EventListScreen> {
-  // Variável para guardar a referência ao Future que abre a caixa.
-  // Isso garante que a operação de abrir a caixa só será executada UMA VEZ.
-  late final Future<Box<Event>> _eventsBoxFuture;
+  // Nossos novos serviços
+  final AuthService _authService = AuthService();
+  final EventService _eventService = EventService();
+  final FriendsService _friendsService = FriendsService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final User? _currentUser = FirebaseAuth.instance.currentUser;
+
+  // Variáveis de estado para o Drawer (como antes)
+  Map<String, dynamic>? _userDocumentData;
 
   @override
   void initState() {
     super.initState();
-    // Inicializamos o Future aqui, no initState.
-    _eventsBoxFuture = _openEventsBox();
+    _loadCurrentUserData(); // Renomeei para ser mais claro
   }
 
-  /// Método auxiliar para abrir a caixa de eventos de forma segura.
-  Future<Box<Event>> _openEventsBox() async {
-    if (Hive.isBoxOpen('events')) {
-      return Hive.box<Event>('events');
-    } else {
-      return await Hive.openBox<Event>('events');
+  // Carrega os dados do *usuário* (para o Drawer)
+  Future<void> _loadCurrentUserData() async {
+    if (_currentUser == null) return;
+    
+    Map<String, dynamic>? docData;
+    final docRef = _firestore.collection('users').doc(_currentUser!.uid);
+
+    try {
+      final docSnap = await docRef.get();
+
+      // --- Geração do friendCode (a mesma lógica de sempre) ---
+      // Geramos o código aqui, pois vamos precisar dele em ambos os casos.
+      final String fullHex = _currentUser!.uid.hashCode
+          .abs()
+          .toRadixString(16)
+          .padLeft(8, '0')
+          .toUpperCase();
+      final String friendCode = fullHex.substring(fullHex.length - 8);
+      // --- Fim da geração ---
+
+      if (docSnap.exists) {
+        // --- CASO 1: Documento EXISTE ---
+        docData = docSnap.data() as Map<String, dynamic>?;
+
+        if (docData != null && (docData['friendCode'] == null)) {
+          // Documento existe, mas SEM friendCode (usuário antigo)
+          await docRef.update({'friendCode': friendCode});
+          docData['friendCode'] = friendCode; // Atualiza localmente
+        }
+      } else {
+        // --- CASO 2: Documento NÃO EXISTE ---
+        // (Usuário do Google "órfão" que pulou o setup)
+        
+        // Cria o mapa de dados do zero
+        docData = {
+          'uid': _currentUser!.uid,
+          'email': _currentUser!.email,
+          'displayName': _currentUser!.displayName ?? _currentUser!.email?.split('@')[0],
+          'photoURL': _currentUser!.photoURL,
+          'lastLogin': FieldValue.serverTimestamp(),
+          'friendCode': friendCode, // Adiciona o friendCode
+        };
+
+        // Cria o documento no Firestore
+        await docRef.set(docData, SetOptions(merge: true));
+      }
+    } catch (e) {
+      print("Erro ao buscar/criar dados do usuário: $e");
+    }
+
+    if (mounted) {
+      setState(() {
+        _userDocumentData = docData;
+      });
     }
   }
 
-  Future<void> _showDeleteConfirmationDialog(Event event) async {
+  // Diálogo de confirmação de exclusão (agora chama o EventService)
+  Future<void> _showDeleteConfirmationDialog(
+      String eventId, String eventName) async {
     return showDialog<void>(
       context: context,
-      barrierDismissible: false, // O usuário deve tocar em um botão para fechar.
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: const Color.fromARGB(255, 230, 210, 185),
-          title: const Text(
-            'Confirmar Exclusão',
-            style: TextStyle(fontFamily: 'Itim'),
-          ),
-          content: SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[
-                Text(
-                  'Você tem certeza que deseja excluir o evento "${event.name}"?',
-                  style: const TextStyle(fontFamily: 'Itim'),
-                ),
-                const Text(
-                  '\nEsta ação não pode ser desfeita.',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
+          title: const Text('Confirmar Exclusão',
+              style: TextStyle(fontFamily: 'Itim')),
+          content: Text(
+              'Você tem certeza que deseja excluir o evento "$eventName"?\nEsta ação não pode ser desfeita.',
+              style: const TextStyle(fontFamily: 'Itim')),
           actions: <Widget>[
             TextButton(
-              child: const Text('Cancelar', style: TextStyle(fontFamily: 'Itim')),
-              onPressed: () {
-                Navigator.of(context).pop(); // Fecha o diálogo
-              },
+              child:
+                  const Text('Cancelar', style: TextStyle(fontFamily: 'Itim')),
+              onPressed: () => Navigator.of(context).pop(),
             ),
             TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red.shade700,
-              ),
-              child: const Text('Excluir', style: TextStyle(fontFamily: 'Itim')),
-              onPressed: () {
-                // A MÁGICA ACONTECE AQUI!
-                event.delete();
-                Navigator.of(context).pop(); // Fecha o diálogo
+              style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+              child:
+                  const Text('Excluir', style: TextStyle(fontFamily: 'Itim')),
+              onPressed: () async {
+                // CHAMA O SERVIÇO DE EXCLUSÃO
+                await _eventService.deleteEvent(eventId);
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
               },
             ),
           ],
@@ -82,12 +132,10 @@ class _EventListScreenState extends State<EventListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // O seu método build original está correto e permanece aqui...
-    // Ele usa o FutureBuilder e o ValueListenableBuilder para construir a lista
-    // e chama o _buildEventCard para cada item.
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 230, 210, 185),
       appBar: AppBar(
+        // ... (seu AppBar é o mesmo) ...
         foregroundColor: const Color.fromARGB(255, 63, 39, 28),
         backgroundColor: const Color.fromARGB(255, 211, 173, 92),
         centerTitle: false,
@@ -100,40 +148,122 @@ class _EventListScreenState extends State<EventListScreen> {
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
-          children: <Widget>[
-            const DrawerHeader(
-              decoration: BoxDecoration(
-                color: Color.fromARGB(255, 211, 173, 92),
-              ),
-              child: Text(
-                'Olha o Rolê',
-                style: TextStyle(
-                  color: Color.fromARGB(255, 63, 39, 28),
-                  fontSize: 24,
+          children: [
+            // --- Seu UserAccountsDrawerHeader (copiado) ---
+            UserAccountsDrawerHeader(
+              accountName: Text(
+                _currentUser?.displayName ?? 'Usuário',
+                style: const TextStyle(
                   fontFamily: 'Itim',
+                  fontSize: 18,
+                  color: Color.fromARGB(255, 63, 39, 28),
                 ),
               ),
+              accountEmail: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _currentUser?.email ?? '',
+                    style: const TextStyle(
+                      fontFamily: 'Itim',
+                      color: Color.fromARGB(255, 63, 39, 28),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  InkWell(
+                    onTap: () {
+                      final friendCode = _userDocumentData?['friendCode'];
+                      if (friendCode != null) {
+                        Clipboard.setData(ClipboardData(text: friendCode));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'ID de Amigo copiado para a área de transferência!'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                    child: Row(
+                      children: [
+                        Text(
+                          'ID: ${_userDocumentData?['friendCode'] ?? '...'}',
+                          style: const TextStyle(
+                            fontFamily: 'Itim',
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Color.fromARGB(255, 63, 39, 28),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.copy_outlined,
+                            size: 14,
+                            color: Color.fromARGB(255, 63, 39, 28)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              currentAccountPicture: CircleAvatar(
+                backgroundImage: (_currentUser?.photoURL != null)
+                    ? NetworkImage(_currentUser!.photoURL!)
+                    : null,
+                backgroundColor: Colors.white,
+                child: (_currentUser?.photoURL == null)
+                    ? const Icon(Icons.person,
+                        size: 40, color: Color.fromARGB(255, 63, 39, 28))
+                    : null,
+              ),
+              decoration: const BoxDecoration(
+                color: Color.fromARGB(255, 211, 173, 92),
+              ),
             ),
+            
+            // --- Resto do seu Drawer (copiado) ---
             ListTile(
               leading: const Icon(Icons.home),
-              title: const Text('Início'),
-              onTap: () {
-                Navigator.pop(context);
-              },
+              title: const Text('Início', style: TextStyle(fontFamily: 'Itim')),
+              onTap: () => Navigator.pop(context),
             ),
             ListTile(
               leading: const Icon(Icons.person),
-              title: const Text('Perfil - em breve',style: TextStyle(decoration: TextDecoration.lineThrough),),
-              
+              title: const Text('Perfil', style: TextStyle(fontFamily: 'Itim')), // <-- 1. Removido o "em breve"
+              onTap: () { // <-- 2. Adicionado o onTap
+                Navigator.pop(context); // Fecha o drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileScreen(),
+                  ),
+                );
+            },
             ),
             ListTile(
               leading: const Icon(Icons.settings),
-              title: const Text('Configurações - em breve' ,style: TextStyle(decoration: TextDecoration.lineThrough),),
-              
+              title: const Text('Configurações - em breve',
+                  style: TextStyle(
+                      fontFamily: 'Itim',
+                      decoration: TextDecoration.lineThrough)),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text(
+                'Sair',
+                style: TextStyle(color: Colors.red, fontFamily: 'Itim'),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                await _authService.signOut();
+              },
             ),
           ],
         ),
       ),
+      
+      // --- O NOVO BODY COM STREAMBUILDER ---
       body: Container(
         decoration: const BoxDecoration(
           image: DecorationImage(
@@ -146,8 +276,9 @@ class _EventListScreenState extends State<EventListScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: FutureBuilder<Box<Event>>(
-                future: _eventsBoxFuture,
+              // Este StreamBuilder é o novo "coração" da tela
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _eventService.getEventsStreamForUser(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
@@ -159,36 +290,31 @@ class _EventListScreenState extends State<EventListScreen> {
                             'Erro ao carregar eventos: ${snapshot.error}'));
                   }
 
-                  final eventBox = snapshot.data!;
-                  return ValueListenableBuilder(
-                    valueListenable: eventBox.listenable(),
-                    builder: (context, Box<Event> box, _) {
-                      final events = box.values.toList().cast<Event>();
+                  final events = snapshot.data?.docs ?? [];
 
-                      if (events.isEmpty) {
-                        return const Center(
-                          child: Text('Nenhum evento por aqui ainda!',
-                              style: TextStyle(
-                                  color: Color.fromARGB(255, 63, 39, 28),
-                                  fontFamily: 'Itim',
-                                  fontSize: 25)),
-                        );
-                      }
-                      
-                      events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                  if (events.isEmpty) {
+                    return const Center(
+                      child: Text('Nenhum evento por aqui ainda!',
+                          style: TextStyle(
+                              color: Color.fromARGB(255, 63, 39, 28),
+                              fontFamily: 'Itim',
+                              fontSize: 25)),
+                    );
+                  }
 
-                      return ListView.builder(
-                        itemCount: events.length,
-                        itemBuilder: (context, index) {
-                          // Chamando a versão CORRETA e ÚNICA do _buildEventCard
-                          return _buildEventCard(events[index]);
-                        },
-                      );
+                  return ListView.builder(
+                    itemCount: events.length,
+                    itemBuilder: (context, index) {
+                      // Cada 'event' é um DocumentSnapshot do Firestore
+                      final event = events[index];
+                      return _buildEventCard(event);
                     },
                   );
                 },
               ),
             ),
+            
+            // --- Seu Card de Ações (copiado) ---
             Card(
               elevation: 4.0,
               margin: const EdgeInsets.all(16.0),
@@ -209,22 +335,56 @@ class _EventListScreenState extends State<EventListScreen> {
                         );
                       },
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.arrow_forward, size: 28),
-                      title: const Text('Ingressar em um evento',
-                          style: TextStyle(fontSize: 18, decoration: TextDecoration.lineThrough)),
-                      trailing: Text("Em Desenvolvimento",
-                          style: TextStyle(fontSize: 12)),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: _eventService.getEventInvitesStream(),
+                      builder: (context, snapshot) {
+                        final bool hasInvites =
+                            snapshot.hasData && snapshot.data!.docs.isNotEmpty;
+
+                        return ListTile(
+                          leading: Badge(
+                            // O Badge (ponto vermelho)
+                            isLabelVisible: hasInvites,
+                            child: const Icon(Icons.arrow_forward, size: 28),
+                          ),
+                          title: const Text('Ingressar em um evento',
+                              style: TextStyle(fontSize: 18)),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) => const JoinEventScreen()),
+                            );
+                          },
+                        );
+                      },
                     ),
-                    const ListTile(
-                      leading: Icon(Icons.people_outline, size: 28),
-                      title: Text('Amigos',
-                          style: TextStyle(
-                              fontSize: 18,
-                              decoration: TextDecoration.lineThrough)),
-                      trailing: Text("Em Desenvolvimento",
-                          style: TextStyle(fontSize: 12)),
-                    ),
+                  StreamBuilder<QuerySnapshot>(
+                  stream: _friendsService.getFriendInvitesStream(),
+                  builder: (context, snapshot) {
+                    // Verifica se há algum convite pendente
+                    final bool hasInvites =
+                        snapshot.hasData && snapshot.data!.docs.isNotEmpty;
+
+                    return ListTile(
+                      leading: Badge(
+                        // O Badge (ponto vermelho)
+                        isLabelVisible: hasInvites,
+                        child: const Icon(Icons.people_outline, size: 28),
+                      ),
+                      title: const Text('Amigos',
+                          style: TextStyle(fontSize: 18)),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const FriendsScreen(),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
                   ],
                 ),
               ),
@@ -236,8 +396,14 @@ class _EventListScreenState extends State<EventListScreen> {
     );
   }
 
-  
-  Widget _buildEventCard(Event event) {
+  // Card do evento (agora lê um QueryDocumentSnapshot)
+  Widget _buildEventCard(QueryDocumentSnapshot event) {
+    // Pega os dados do snapshot
+    final data = event.data() as Map<String, dynamic>;
+    final String name = data['name'] ?? 'Evento sem nome';
+    final String eventDate = data['eventDate'] ?? 'Não definida';
+    final List<dynamic> items = data['items'] ?? [];
+
     return Card(
       elevation: 4.0,
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
@@ -260,7 +426,7 @@ class _EventListScreenState extends State<EventListScreen> {
           ),
         ),
         title: Text(
-          event.name,
+          name,
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -273,14 +439,14 @@ class _EventListScreenState extends State<EventListScreen> {
           children: [
             const SizedBox(height: 4),
             Text(
-              '📅 Data do Evento: ${event.eventDate ?? "Não definida"}',
+              '📅 Data do Evento: $eventDate',
               style: const TextStyle(
                 color: Colors.black54,
                 fontFamily: 'Itim',
               ),
             ),
             Text(
-              'Itens na lista: ${event.items.length}',
+              'Itens na lista: ${items.length}',
               style: const TextStyle(
                 color: Colors.black54,
                 fontFamily: 'Itim',
@@ -294,185 +460,17 @@ class _EventListScreenState extends State<EventListScreen> {
           size: 16,
         ),
         onTap: () {
-          _navigateToEventDetails(event);
+          // --- ATUALIZE AQUI ---
+          // Navega para a nova tela de detalhes
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => EventDetailScreen(event: event),
+            ),
+          );
         },
       ),
     );
   }
 
-  // Método ATUALIZADO para mostrar todos os detalhes do evento
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: Colors.black54, size: 20),
-          const SizedBox(width: 12),
-          Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontFamily: 'Itim',
-              color: Color.fromARGB(255, 63, 39, 28),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontFamily: 'Itim',
-                color: Colors.black87,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // MÉTODO _navigateToEventDetails TOTALMENTE ATUALIZADO
-  void _navigateToEventDetails(Event event) {
-    // Formata a data de criação para o padrão DD/MM/AAAA
-    final formattedCreationDate = 
-        "${event.createdAt.day.toString().padLeft(2, '0')}/"
-        "${event.createdAt.month.toString().padLeft(2, '0')}/"
-        "${event.createdAt.year}";
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color.fromARGB(255, 245, 235, 220), // Um tom um pouco mais claro
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        // Título centralizado com o nome do evento
-        title: Center(
-          child: Text(
-            event.name,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontFamily: 'Itim',
-              fontWeight: FontWeight.bold,
-              fontSize: 24,
-              color: Color.fromARGB(255, 63, 39, 28),
-            ),
-          ),
-        ),
-        content: SingleChildScrollView(
-          child: ListBody(
-            children: <Widget>[
-              const Divider(),
-              const SizedBox(height: 10),
-
-              // Usando nosso helper widget para cada informação
-              _buildInfoRow(Icons.calendar_today, 'Data do Evento:', event.eventDate ?? "Não definida"),
-              _buildInfoRow(Icons.people, 'Quantidade de Pessoas:', '${event.peopleCount ?? 0} pessoas'),
-              _buildInfoRow(Icons.description, 'Descrição:', event.description ?? "Nenhuma"),
-              _buildInfoRow(Icons.vpn_key, 'ID do Evento:', event.id),
-              _buildInfoRow(Icons.create, 'Data de Criação:', formattedCreationDate),
-
-              const SizedBox(height: 20),
-
-              // Seção de Itens do Evento
-              const Text(
-                '🛒 Itens do Evento:',
-                style: TextStyle(
-                  fontFamily: 'Itim',
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                  color: Color.fromARGB(255, 63, 39, 28),
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              // Mapeando a lista de itens para o novo widget de item
-              ...event.items.map((item) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4.0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(15),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          spreadRadius: 1,
-                          blurRadius: 3,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        // Ícone do item
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color.fromARGB(255, 255, 226, 169), // Cor de fundo do ícone
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            // Pega a primeira letra do item ou um emoji
-                            item.name.isNotEmpty ? item.name[0].toUpperCase() : '🛒',
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.brown),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Nome do item
-                        Expanded(
-                          child: Text(
-                            item.name,
-                            style: const TextStyle(fontFamily: 'Itim', fontSize: 16),
-                          ),
-                        ),
-                        // "Badge" de quantidade
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: const Color.fromARGB(255, 230, 210, 185),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            '${item.quantity}x',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color.fromARGB(255, 63, 39, 28),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-              if (event.items.isEmpty)
-                const Text(
-                  'Nenhum item na lista.',
-                  style: TextStyle(fontFamily: 'Itim', fontStyle: FontStyle.italic),
-                ),
-            ],
-          ),
-        ),
-        actionsAlignment: MainAxisAlignment.end,
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        actions: [
-          // Os botões de ação continuam aqui
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
-            onPressed: () {
-              Navigator.pop(context);
-              _showDeleteConfirmationDialog(event);
-            },
-            child: const Text('Excluir', style: TextStyle(fontFamily: 'Itim')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fechar', style: TextStyle(fontFamily: 'Itim', color: Color.fromARGB(255, 63, 39, 28))),
-          ),
-        ],
-      ),
-    );
-  }
 }
