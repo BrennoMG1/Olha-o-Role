@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 // CORREÇÃO AQUI: Mudando para um caminho relativo
 import '/auth/auth_service.dart'; // Importe seu AuthService
 import 'event_list_screen.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import '/services/storage_service.dart';
 
 // 1. Mude para StatefulWidget para podermos usar TextControllers e o AuthService
 class ProfileSetupScreen extends StatefulWidget {
@@ -18,7 +21,10 @@ class ProfileSetupScreen extends StatefulWidget {
 class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final _displayNameController = TextEditingController();
   final _authService = AuthService(); // Instância do nosso serviço
+  final _storageService = StorageService();
+  final _picker = ImagePicker();
   bool _isLoading = false;
+  File? _pickedImage;
 
   @override
   void initState() {
@@ -35,7 +41,14 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     _displayNameController.dispose();
     super.dispose();
   }
-
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() {
+        _pickedImage = File(image.path);
+      });
+    }
+  }
   /// Salva o perfil do usuário
   Future<void> _saveProfile() async {
     if (_displayNameController.text.isEmpty) {
@@ -50,12 +63,22 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     setState(() => _isLoading = true);
 
     try {
-  // 1. Atualiza o nome de exibição no Firebase Auth
-  await widget.user.updateDisplayName(_displayNameController.text);
+      // Pega a foto do Google (se houver) ou fica nulo
+      String? photoURL = widget.user.photoURL;
 
-  // --- 2. GERE O CÓDIGO DE AMIGO AQUI ---
-  // Isso pega o hashCode do UID, converte para hexadecimal,
-  // garante 8 dígitos (com '0' à esquerda) e pega os últimos 8.
+      // 1. Se o usuário ESCOLHEU uma foto, faz o upload
+      if (_pickedImage != null) {
+        photoURL = await _storageService.uploadProfilePicture(
+          _pickedImage!,
+          widget.user.uid,
+        );
+      }
+
+      // 2. Atualiza o NOME e a FOTO no Firebase Auth
+      await widget.user.updateDisplayName(_displayNameController.text);
+      if (photoURL != null) {
+        await widget.user.updatePhotoURL(photoURL);
+      }
   final String fullHex = widget.user.uid.hashCode
       .abs()
       .toRadixString(16)
@@ -68,7 +91,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   await _authService.saveUserToFirestore(
     widget.user,
     _displayNameController.text,
-    friendCode, // <-- O argumento que faltava
+    friendCode,
+    photoURL, // <-- O argumento que faltava
   );
 
   // 4. Navega para a tela principal, removendo todas as telas anteriores
@@ -100,6 +124,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final String? googlePhoto = widget.user.photoURL;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Crie sua conta'),
@@ -115,22 +140,26 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               alignment: Alignment.bottomRight,
               children: [
                 CircleAvatar(
-                  radius: 80,
-                  backgroundColor: const Color(0xFFD3CFF8),
-                  // 4. Mostra a foto do usuário (se tiver, ex: vinda do Google)
-                  backgroundImage: widget.user.photoURL != null
-                      ? NetworkImage(widget.user.photoURL!)
-                      : null,
-                  child: widget.user.photoURL == null
-                      ? const Icon(
-                          Icons.person,
-                          size: 100,
-                          color: Color(0xFF4A3F99),
-                        )
-                      : null,
-                ),
+                    radius: 80,
+                    backgroundColor: const Color(0xFFD3CFF8),
+                    // Mostra a foto escolhida (prévia)
+                    backgroundImage: _pickedImage != null
+                        ? FileImage(_pickedImage!)
+                        : (googlePhoto != null)
+                            ? NetworkImage(googlePhoto)
+                            : null as ImageProvider?,
+                    // Se não tiver nem prévia nem foto do Google, mostra o ícone
+                    child: (_pickedImage == null && googlePhoto == null)
+                        ? const Icon(
+                            Icons.person,
+                            size: 100,
+                            color: Color(0xFF4A3F99),
+                          )
+                        : null,
+                  ),
                 IconButton(
                   onPressed: () {
+                    onPressed: _pickImage;
                     // Lógica para editar a foto de perfil (requer ImagePicker e Storage)
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(

@@ -1,10 +1,13 @@
-// lib/profile_screen.dart
+// lib/profile_screen.dart (VERSÃO ATUALIZADA)
 
+import 'dart:io'; // <-- 1. NOVO IMPORT
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '/auth/auth_service.dart'; // Importe seu AuthService
+import 'package:image_picker/image_picker.dart'; // <-- 2. NOVO IMPORT
+import '/auth/auth_service.dart';
+import '/services/storage_service.dart'; // <-- 3. NOVO IMPORT
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -18,15 +21,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AuthService _authService = AuthService();
+  final StorageService _storageService = StorageService(); // <-- 4. NOVO SERVIÇO
+  final _picker = ImagePicker();
 
   // Controladores e Variáveis de Estado
   final _nameController = TextEditingController();
   User? _currentUser;
   String? _email;
-  String? _photoURL;
+  String? _photoURL; // A foto ATUAL (da rede)
   String? _friendCode;
-  bool _isLoading = true; // Começa como true para carregar os dados
-  bool _isSaving = false; // Para o botão de salvar
+  bool _isLoading = true;
+  bool _isSaving = false;
+  File? _pickedImage; // A NOVA foto (prévia local)
   bool _isEmailUser = false;
 
   @override
@@ -44,29 +50,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// Carrega os dados do usuário (do Auth e do Firestore)
   Future<void> _loadUserData() async {
     setState(() => _isLoading = true);
-    
     _currentUser = _auth.currentUser;
     if (_currentUser == null) {
       setState(() => _isLoading = false);
-      return; // Sai se não houver usuário
+      return;
     }
 
-    // 1. Carrega dados do FirebaseAuth
     _nameController.text = _currentUser!.displayName ?? '';
     _email = _currentUser!.email ?? '';
-    _photoURL = _currentUser!.photoURL;
-
+    _photoURL = _currentUser!.photoURL; // Carrega a foto da rede
+    
     if (_currentUser!.providerData
         .any((provider) => provider.providerId == 'password')) {
       _isEmailUser = true;
     }
 
-    // 2. Carrega dados do Firestore (para o friendCode)
     try {
       final docSnap =
           await _firestore.collection('users').doc(_currentUser!.uid).get();
       if (docSnap.exists) {
         _friendCode = docSnap.data()?['friendCode'];
+        // Garante que o photoURL do Firestore (mais atual) seja usado
+        _photoURL = docSnap.data()?['photoURL'] ?? _photoURL;
       }
     } catch (e) {
       print("Erro ao carregar friendCode: $e");
@@ -75,7 +80,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isLoading = false);
   }
 
-  /// Salva as alterações do perfil
+  /// 5. NOVA FUNÇÃO para escolher a imagem
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() {
+        _pickedImage = File(image.path);
+      });
+    }
+  }
+
+  /// 6. FUNÇÃO _saveProfile ATUALIZADA
   Future<void> _saveProfile() async {
     if (_currentUser == null || _nameController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -89,20 +104,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isSaving = true);
 
     try {
-      // 1. Chama o método do seu AuthService
+      String? newPhotoURL = _photoURL; // Começa com a foto antiga
+
+      // 1. Se uma nova foto foi escolhida, faz o upload
+      if (_pickedImage != null) {
+        newPhotoURL = await _storageService.uploadProfilePicture(
+          _pickedImage!,
+          _currentUser!.uid,
+        );
+      }
+
+      // 2. Chama o método do AuthService (que atualiza Auth e Firestore)
       await _authService.updateUserProfile(
         _currentUser!,
         _nameController.text,
-        // photoURL: _newPhotoUrl, // TODO: Implementar upload de foto
+        photoURL: newPhotoURL, // Passa a URL (nova ou antiga)
       );
 
-      // 2. Recarrega os dados do usuário (para atualizar a foto, se mudou)
-      await _currentUser!.reload();
-      _currentUser = _auth.currentUser;
-
+      // 3. Atualiza a UI
       if (mounted) {
         setState(() {
-          _photoURL = _currentUser!.photoURL; // Atualiza a foto na UI
+          _pickedImage = null; // Limpa a prévia
+          _photoURL = newPhotoURL; // Define a nova foto da rede
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -123,22 +146,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isSaving = false);
   }
 
-  /// TODO: Implementar a lógica de escolher e enviar foto
-  void _editPhoto() {
-    // Isso exigirá os pacotes 'image_picker' e 'firebase_storage'
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Função de editar foto ainda não implementada.'),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    // --- O design é copiado do seu app ---
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 230, 210, 185),
       appBar: AppBar(
+        // ... (seu AppBar) ...
         foregroundColor: const Color.fromARGB(255, 63, 39, 28),
         backgroundColor: const Color.fromARGB(255, 211, 173, 92),
         centerTitle: false,
@@ -165,19 +178,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const SizedBox(height: 20),
-                    // --- Avatar com Botão de Edição ---
                     Center(
                       child: Stack(
                         alignment: Alignment.bottomRight,
                         children: [
+                          // --- 7. AVATAR ATUALIZADO (mostra a prévia) ---
                           CircleAvatar(
                             radius: 70,
                             backgroundColor:
                                 const Color.fromARGB(255, 211, 173, 92),
-                            backgroundImage: (_photoURL != null)
-                                ? NetworkImage(_photoURL!)
-                                : null,
-                            child: (_photoURL == null)
+                            // Se tiver uma foto nova (prévia), usa FileImage
+                            backgroundImage: _pickedImage != null
+                                ? FileImage(_pickedImage!)
+                                // Senão, usa a foto da rede (antiga)
+                                : (_photoURL != null)
+                                    ? NetworkImage(_photoURL!)
+                                    : null as ImageProvider?,
+                            // Se não tiver NENHUMA foto, mostra o ícone
+                            child: (_pickedImage == null && _photoURL == null)
                                 ? const Icon(
                                     Icons.person,
                                     size: 70,
@@ -185,7 +203,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   )
                                 : null,
                           ),
-                          // Botão de editar flutuante
                           IconButton(
                             style: IconButton.styleFrom(
                               backgroundColor: Colors.white,
@@ -196,7 +213,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                             icon: const Icon(Icons.edit_outlined,
                                 color: Color.fromARGB(255, 63, 39, 28)),
-                            onPressed: _editPhoto,
+                            onPressed: _pickImage, // <-- 8. CHAMA A FUNÇÃO
                           ),
                         ],
                       ),
@@ -206,13 +223,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     // --- Card de Informações ---
                     Card(
                       elevation: 2.0,
-                      color:
-                          const Color.fromARGB(255, 245, 235, 220),
+                      color: const Color.fromARGB(255, 245, 235, 220),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           children: [
-                            // --- Nome de Exibição (Editável) ---
+                            // ... (seu TextField de Nome)
                             TextField(
                               controller: _nameController,
                               decoration: const InputDecoration(
@@ -222,8 +238,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ),
                             const SizedBox(height: 20),
-
-                            // --- Email (Apenas Leitura) ---
+                            
+                            // ... (seu ListTile de E-mail)
                             ListTile(
                               leading: const Icon(Icons.email_outlined,
                                   color: Colors.black54),
@@ -236,7 +252,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   style: TextStyle(fontFamily: 'Itim')),
                             ),
 
-                            // --- ID de Amigo (Apenas Leitura com Cópia) ---
+                            // ... (seu ListTile de ID de Amigo)
                             ListTile(
                               leading: const Icon(Icons.badge_outlined,
                                   color: Colors.black54),
@@ -258,59 +274,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ScaffoldMessenger.of(context)
                                         .showSnackBar(
                                       const SnackBar(
-                                          content:
-                                              Text('ID copiado!'),
+                                          content: Text('ID copiado!'),
                                           backgroundColor: Colors.green),
                                     );
                                   }
                                 },
                               ),
                             ),
-                            if (_isEmailUser) // SÓ MOSTRA SE FOR LOGIN POR E-MAIL
-                      Column(
-                        children: [
-                          const Divider(indent: 16, endIndent: 16),
-                          ListTile(
-                            leading: const Icon(Icons.lock_outline,
-                                color: Colors.black54),
-                            title: const Text('Alterar Senha',
-                                style: TextStyle(
-                                    fontFamily: 'Itim', fontSize: 16)),
-                            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                            onTap: () async {
-                              if (_email == null) return;
-
-                              // Mostra um feedback
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Enviando link de redefinição...'),
-                                ),
-                              );
-
-                              // Chama o mesmo serviço
-                              final result = await _authService.sendPasswordResetEmail(_email!);
-
-                              if (mounted) {
-                                if (result == "Sucesso") {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          'Link enviado! Verifique seu e-mail.'),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                        content: Text(result),
-                                        backgroundColor: Colors.red),
-                                  );
-                                }
-                              }
-                            },
-                          ),
-                        ],
-                      ),
+                            
+                            // ... (seu ListTile de Alterar Senha)
+                            if (_isEmailUser)
+                              Column(
+                                children: [
+                                  const Divider(indent: 16, endIndent: 16),
+                                  ListTile(
+                                    leading: const Icon(Icons.lock_outline,
+                                        color: Colors.black54),
+                                    title: const Text('Alterar Senha',
+                                        style: TextStyle(
+                                            fontFamily: 'Itim', fontSize: 16)),
+                                    trailing: const Icon(Icons.arrow_forward_ios,
+                                        size: 16),
+                                    onTap: () async {
+                                      if (_email == null) return;
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              'Enviando link de redefinição...'),
+                                        ),
+                                      );
+                                      final result = await _authService
+                                          .sendPasswordResetEmail(_email!);
+                                      if (mounted) {
+                                        if (result == "Sucesso") {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                  'Link enviado! Verifique seu e-mail.'),
+                                              backgroundColor: Colors.green,
+                                            ),
+                                          );
+                                        } else {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                                content: Text(result),
+                                                backgroundColor: Colors.red),
+                                          );
+                                        }
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
                           ],
                         ),
                       ),
@@ -320,6 +338,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     // --- Botão Salvar ---
                     ElevatedButton(
                       onPressed: _isSaving ? null : _saveProfile,
+                      // ... (estilo do botão)
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
                             const Color.fromARGB(255, 63, 39, 28),
