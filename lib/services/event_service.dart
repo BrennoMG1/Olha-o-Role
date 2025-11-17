@@ -1,6 +1,8 @@
+// lib/services/event_service.dart (VERSÃO COMPLETA E FINAL)
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/event_item.dart';
+import 'event_item.dart';
 import '../models/contributor.dart';
 
 class EventService {
@@ -140,6 +142,8 @@ class EventService {
     await batch.commit();
   }
 
+  // VVVVVV O MÉTODO QUE ESTAVA FALTANDO VVVVVV
+  /// Convidado RECUSA um convite de evento. Retorna true/false.
   Future<bool> declineEventInvite(String inviteId) async {
     final User? user = _auth.currentUser;
     if (user == null) return false;
@@ -168,6 +172,9 @@ class EventService {
       return false; // Falha
     }
   }
+  // ^^^^^^ O MÉTODO QUE ESTAVA FALTANDO ^^^^^^
+
+
   // --- MÉTODOS DE INGRESSO E ITENS (CORRIGIDOS) ---
 
   Future<String> joinEventById(String eventId) async {
@@ -197,7 +204,7 @@ class EventService {
         final eventData = docSnap.data() as Map<String, dynamic>;
         final List<EventItem> items =
             (eventData['items'] as List<dynamic>? ?? [])
-                .map((map) => EventItem.fromMap(map))
+                .map((map) => EventItem.fromMap(map as Map<String, dynamic>)) // <-- Adicione o cast
                 .toList();
 
         final int itemIndex = items.indexWhere((item) => item.name == itemName);
@@ -245,21 +252,20 @@ class EventService {
       return "Erro: ${e.toString()}";
     }
   }
-
+  
+  /// Libera a 'porção' de um item que o usuário atual pegou
   Future<String> releaseMyClaim(String eventId, String itemName, User user) async {
     final eventRef = _firestore.collection('events').doc(eventId);
-
     try {
       await _firestore.runTransaction((transaction) async {
         final docSnap = await transaction.get(eventRef);
         if (!docSnap.exists) {
           throw Exception('Evento não encontrado');
         }
-
         final eventData = docSnap.data() as Map<String, dynamic>;
         final List<EventItem> items =
             (eventData['items'] as List<dynamic>? ?? [])
-                .map((map) => EventItem.fromMap(map))
+                .map((map) => EventItem.fromMap(map as Map<String, dynamic>))
                 .toList();
 
         final int itemIndex = items.indexWhere((item) => item.name == itemName);
@@ -267,10 +273,14 @@ class EventService {
           throw Exception('Item não encontrado');
         }
 
-        // Remove o contribuidor da lista (pelo UID)
-        items[itemIndex].contributors.removeWhere((c) => c.uid == user.uid);
+        // VVVVVV A LINHA QUE FALTAVA ESTÁ AQUI VVVVVV
+        // Pega o objeto 'item' real da lista usando o índice
+        final EventItem item = items[itemIndex];
+        // ^^^^^^ ESTA É A CORREÇÃO ^^^^^^
 
-        // Salva a lista de itens atualizada de volta no Firestore
+        // Agora, esta linha funciona, pois 'item' está definido
+        item.contributors.removeWhere((c) => c.uid == user.uid);
+        
         final List<Map<String, dynamic>> itemsAsMaps =
             items.map((i) => i.toMap()).toList();
         transaction.update(eventRef, {'items': itemsAsMaps});
@@ -281,28 +291,21 @@ class EventService {
       return "Erro: ${e.toString()}";
     }
   }
-  
-  // VVVVVV O MÉTODO QUE ESTAVA FALTANDO VVVVVV
 
   /// Permite que um participante saia de um evento
-  /// Isso remove o participante da lista E libera os itens que ele pegou.
   Future<String> leaveEvent(String eventId, User user) async {
     final eventRef = _firestore.collection('events').doc(eventId);
-
     try {
       await _firestore.runTransaction((transaction) async {
         final docSnap = await transaction.get(eventRef);
         if (!docSnap.exists) {
           throw Exception('Evento não encontrado');
         }
-
         final eventData = docSnap.data() as Map<String, dynamic>;
-        
         final List<EventItem> items =
             (eventData['items'] as List<dynamic>? ?? [])
-                .map((map) => EventItem.fromMap(map))
+                .map((map) => EventItem.fromMap(map as Map<String, dynamic>)) // <-- Adicione o cast
                 .toList();
-                
         final List<String> participants =
             List<String>.from(eventData['participants'] ?? []);
 

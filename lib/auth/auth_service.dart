@@ -42,6 +42,22 @@ class AuthService {
     }
   }
 
+  Future<String> sendPasswordResetEmail(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email.trim());
+      return "Sucesso";
+    } on FirebaseAuthException catch (e) {
+      // Retorna uma mensagem de erro amigável
+      if (e.code == 'user-not-found') {
+        return "Nenhuma conta encontrada com este e-mail.";
+      } else {
+        return "Erro: ${e.message}";
+      }
+    } catch (e) {
+      return "Erro: Ocorreu um problema inesperado.";
+    }
+  }
+
   // --- Registro com E-mail/Senha ---
   Future<UserCredential?> signUpWithEmailPassword(String email, String password) async {
     try {

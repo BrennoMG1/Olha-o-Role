@@ -87,47 +87,41 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          backgroundColor: const Color.fromARGB(255, 230, 210, 185),
-          title: const Text('Sair do Evento',
-              style: TextStyle(fontFamily: 'Itim')),
+          // ... (estilização do diálogo)
+          title: const Text('Sair do Evento', style: TextStyle(fontFamily: 'Itim')),
           content: const Text(
               'Você tem certeza que quer sair deste evento?\n\nOs itens que você se comprometeu a levar serão liberados.',
               style: TextStyle(fontFamily: 'Itim')),
           actions: <Widget>[
             TextButton(
-              child:
-                  const Text('Cancelar', style: TextStyle(fontFamily: 'Itim')),
+              child: const Text('Cancelar', style: TextStyle(fontFamily: 'Itim')),
               onPressed: () => Navigator.of(context).pop(),
             ),
             TextButton(
               style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
               child: const Text('Sair', style: TextStyle(fontFamily: 'Itim')),
-              
-              // --- INÍCIO DA CORREÇÃO ---
               onPressed: () async {
-                // 1. Verificamos se o usuário é nulo PRIMEIRO.
+                // Cláusula de Guarda (validação)
                 if (_currentUser == null) {
-                  // Se for nulo, mostramos um erro e paramos.
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                         content: Text('Erro: Usuário não encontrado.'),
                         backgroundColor: Colors.red),
                   );
-                  return; // Para a execução aqui
+                  return; 
                 }
 
-                // 2. Se chegamos aqui, o Dart SABE que _currentUser NÃO é nulo.
-                //    Agora podemos usar o '!' com segurança.
+                // Chamada segura
                 final result =
                     await _eventService.leaveEvent(_eventId, _currentUser!);
 
                 if (mounted) {
                   if (result == "Sucesso") {
-                    Navigator.of(context).pop(); // Fecha o diálogo
-                    Navigator.of(context).pop(); // Volta para a lista de eventos
+                    Navigator.of(context).pop(); 
+                    Navigator.of(context).pop(); 
                   } else {
-                    Navigator.of(context).pop(); // Fecha o diálogo
+                    Navigator.of(context).pop(); 
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                           content: Text(result), backgroundColor: Colors.red),
@@ -135,7 +129,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   }
                 }
               },
-              // --- FIM DA CORREÇÃO ---
             ),
           ],
         );

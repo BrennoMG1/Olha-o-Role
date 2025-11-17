@@ -354,8 +354,22 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.cancel, color: Colors.red, size: 30),
-              onPressed: () {
-                _eventService.declineEventInvite(invite.id);
+              onPressed: () async { // <-- 1. "async"
+                // 2. Chama e espera o resultado
+                bool success =
+                    await _eventService.declineEventInvite(invite.id);
+
+                // 3. Mostra o erro se falhar (IMPEDE O TRAVAMENTO)
+                if (mounted && !success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                          'Erro ao recusar o convite. Verifique suas permissões.'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+                // Se for sucesso, o StreamBuilder remove o card.
               },
             ),
           ],

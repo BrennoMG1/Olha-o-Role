@@ -10,6 +10,7 @@ import 'join_event_screen.dart';
 import 'event_detail_screen.dart';
 import 'friends_screen.dart';
 import '/services/friends_services.dart';
+import 'profile_screen.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -228,10 +229,16 @@ class _EventListScreenState extends State<EventListScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.person),
-              title: const Text('Perfil - em breve',
-                  style: TextStyle(
-                      fontFamily: 'Itim',
-                      decoration: TextDecoration.lineThrough)),
+              title: const Text('Perfil', style: TextStyle(fontFamily: 'Itim')), // <-- 1. Removido o "em breve"
+              onTap: () { // <-- 2. Adicionado o onTap
+                Navigator.pop(context); // Fecha o drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileScreen(),
+                  ),
+                );
+            },
             ),
             ListTile(
               leading: const Icon(Icons.settings),

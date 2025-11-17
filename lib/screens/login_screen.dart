@@ -2,6 +2,7 @@
   import 'registration_screen.dart';
   import 'event_list_screen.dart';
   import '../auth/auth_service.dart'; // Importe o serviço
+  import 'forgot_password_screen.dart';
 
   class LoginScreen extends StatefulWidget {
     const LoginScreen({super.key});
@@ -109,6 +110,29 @@
                         decoration: const InputDecoration(labelText: 'Senha'),
                         obscureText: true,
                         validator: (value) => (value?.isEmpty ?? true) ? 'Digite sua senha' : null,
+                      ),
+                          Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const ForgotPasswordScreen(),
+                                ),
+                              );
+                            },
+                            child: const Text(
+                              'Esqueceu a senha?',
+                              style: TextStyle(
+                                fontFamily: 'Itim',
+                                color: Color.fromARGB(255, 63, 39, 28),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
