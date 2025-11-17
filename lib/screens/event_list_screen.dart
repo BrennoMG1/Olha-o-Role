@@ -26,6 +26,7 @@ class _EventListScreenState extends State<EventListScreen> {
   final FriendsService _friendsService = FriendsService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final User? _currentUser = FirebaseAuth.instance.currentUser;
+  String _photoCacheKey = DateTime.now().millisecondsSinceEpoch.toString();
 
   // Variáveis de estado para o Drawer (como antes)
   Map<String, dynamic>? _userDocumentData;
@@ -89,6 +90,7 @@ class _EventListScreenState extends State<EventListScreen> {
     if (mounted) {
       setState(() {
         _userDocumentData = docData;
+        _photoCacheKey = DateTime.now().millisecondsSinceEpoch.toString();
       });
     }
   }
@@ -208,8 +210,9 @@ class _EventListScreenState extends State<EventListScreen> {
               ),
               currentAccountPicture: CircleAvatar(
                 backgroundImage: (_currentUser?.photoURL != null)
-                    ? NetworkImage(_currentUser!.photoURL!)
-                    : null,
+                  ? NetworkImage(
+                      '${_currentUser!.photoURL!}?key=$_photoCacheKey') // <-- CORREÇÃO AQUI
+                  : null,
                 backgroundColor: Colors.white,
                 child: (_currentUser?.photoURL == null)
                     ? const Icon(Icons.person,
@@ -237,7 +240,10 @@ class _EventListScreenState extends State<EventListScreen> {
                   MaterialPageRoute(
                     builder: (context) => const ProfileScreen(),
                   ),
-                );
+                ).then((_) {
+                  // Ao retornar da ProfileScreen, force o recarregamento
+                  _loadCurrentUserData(); 
+                });
             },
             ),
             ListTile(
