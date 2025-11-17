@@ -69,7 +69,6 @@ class LoginScreen extends StatelessWidget {
               ),
               const SizedBox(height: 10),
 
-              // NOVO BOTÃO ADICIONADO AQUI
               TextButton(
                 onPressed: () {
                   // Navega para a tela principal sem autenticação
@@ -86,7 +85,6 @@ class LoginScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              // FIM DO NOVO BOTÃO
 
               const SizedBox(height: 40),
               const Text(
