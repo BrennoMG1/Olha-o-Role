@@ -1,16 +1,29 @@
-# flutter_application_1
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
 
-A new Flutter project.
+    // Regras da coleção de eventos
+    match /events/{eventId} {
+      // Qualquer usuário autenticado pode ver eventos
+      allow read: if request.auth != null;
 
-## Getting Started
+      // Criar: somente o dono do evento
+      allow create: if request.auth != null && request.resource.data.hostId == request.auth.uid;
 
-This project is a starting point for a Flutter application.
+      // Atualizar: somente o dono
+      allow update: if request.auth != null && request.auth.uid == resource.data.hostId;
 
-A few resources to get you started if this is your first Flutter project:
+      // Excluir: somente o dono do evento
+      allow delete: if request.auth != null && request.auth.uid == resource.data.hostId;
+    }
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+    // Subcoleções dos usuários (ex: convites)
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+      match /event_invites/{inviteId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}
