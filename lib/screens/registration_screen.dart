@@ -133,6 +133,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     if (value == null || value.isEmpty) return 'Digite seu e-mail';
                     // Adicionar validação de formato de e-mail aqui
                     return null;
+                    String pattern = r'^[^@\s]+@[^@\s]+\.[^@\s]+$';
+                    RegExp regex = RegExp(pattern);
+                    if (!regex.hasMatch(value)) {
+                      return 'Insira um formato de e-mail válido.';
+                    }
                   },
                 ),
                 const SizedBox(height: 15),

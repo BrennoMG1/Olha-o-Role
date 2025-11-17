@@ -11,6 +11,8 @@ import 'event_detail_screen.dart';
 import 'friends_screen.dart';
 import '/services/friends_services.dart';
 import 'profile_screen.dart';
+import 'settings_screen.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -34,7 +36,35 @@ class _EventListScreenState extends State<EventListScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCurrentUserData(); // Renomeei para ser mais claro
+    _loadCurrentUserData(); // Renomeei para ser mais claro]
+    _setupFCM();
+  }
+
+  Future<void> _setupFCM() async {
+    if (_currentUser == null) return;
+    
+    final fcm = FirebaseMessaging.instance;
+    
+    // 1. Solicita permissão (obrigatório para iOS e Android 13+)
+    await fcm.requestPermission();
+
+    // 2. Obtém o token do dispositivo
+    String? token = await fcm.getToken();
+    
+    if (token != null) {
+      // 3. Salva o token no documento do usuário no Firestore
+      await _firestore.collection('users').doc(_currentUser!.uid).update({
+        'fcmToken': token,
+        'tokenUpdated': FieldValue.serverTimestamp(),
+      });
+    }
+
+    // 4. Configura o handler para mensagens em primeiro plano
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print('Mensagem recebida em primeiro plano!');
+      // TODO: Mostrar um banner ou notificação local
+      // A maioria dos apps mostra um SnackBar aqui.
+    });
   }
 
   // Carrega os dados do *usuário* (para o Drawer)
@@ -247,12 +277,19 @@ class _EventListScreenState extends State<EventListScreen> {
             },
             ),
             ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('Configurações - em breve',
-                  style: TextStyle(
-                      fontFamily: 'Itim',
-                      decoration: TextDecoration.lineThrough)),
-            ),
+                leading: const Icon(Icons.settings),
+                title: const Text('Configurações',
+                    style: TextStyle(fontFamily: 'Itim')), // <-- Removido o "em breve"
+                onTap: () {
+                  Navigator.pop(context); // Fecha o drawer
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SettingsScreen(),
+                    ),
+                  );
+                },
+              ),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),

@@ -68,22 +68,25 @@ class _JoinEventScreenState extends State<JoinEventScreen> {
     if (scannedValue != null && mounted) {
       // O QR Code que geramos é: 'olharole://EVENT_ID'
       // Precisamos extrair apenas o EVENT_ID.
+      if (scannedValue != null && mounted) {
       if (scannedValue.startsWith('olharole://')) {
         final String eventId = scannedValue.substring('olharole://'.length);
+        
+        // 1. Define o ID no controller
         setState(() {
           _eventIdController.text = eventId;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('ID do Evento lido com sucesso!'),
-              backgroundColor: Colors.green),
-        );
+        
+        // 2. CHAMA A FUNÇÃO DE INGRESSO
+        _joinWithId(); 
+        
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text('QR Code inválido.'),
               backgroundColor: Colors.red),
         );
+      }
       }
     }
   }

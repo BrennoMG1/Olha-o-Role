@@ -65,6 +65,7 @@ class AuthService {
         email: email.trim(),
         password: password.trim(),
       );
+      await userCredential.user!.sendEmailVerification();
       return userCredential;
     } on FirebaseAuthException catch (e) {
       print(e.message);

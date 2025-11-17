@@ -63,22 +63,37 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Pega a foto do Google (se houver) ou fica nulo
-      String? photoURL = widget.user.photoURL;
-
-      // 1. Se o usuário ESCOLHEU uma foto, faz o upload
-      if (_pickedImage != null) {
-        photoURL = await _storageService.uploadProfilePicture(
-          _pickedImage!,
-          widget.user.uid,
+      // Força o Firebase Auth a verificar se o usuário clicou no link
+      await widget.user.reload(); 
+      
+      // VVVV ADICIONE ESTA VALIDAÇÃO VVVV
+      if (!widget.user.emailVerified) {
+        // Envia um aviso e NÃO navega
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Por favor, verifique seu e-mail antes de continuar.'),
+            backgroundColor: Colors.orange),
         );
+        return; 
       }
 
-      // 2. Atualiza o NOME e a FOTO no Firebase Auth
-      await widget.user.updateDisplayName(_displayNameController.text);
-      if (photoURL != null) {
-        await widget.user.updatePhotoURL(photoURL);
-      }
+  // Pega a foto do Google (se houver) ou fica nulo
+  String? photoURL = widget.user.photoURL;
+
+  // 1. Se o usuário ESCOLHEU uma foto, faz o upload
+  if (_pickedImage != null) {
+    photoURL = await _storageService.uploadProfilePicture(
+      _pickedImage!,
+      widget.user.uid,
+    );
+  }
+
+  // 2. Atualiza o NOME e a FOTO no Firebase Auth
+  await widget.user.updateDisplayName(_displayNameController.text);
+  if (photoURL != null) {
+    await widget.user.updatePhotoURL(photoURL);
+  }
+
   final String fullHex = widget.user.uid.hashCode
       .abs()
       .toRadixString(16)
@@ -115,11 +130,11 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         content: Text('Erro ao salvar no Firestore: ${e.toString()}'),
         backgroundColor: Colors.red),
   );
-    } finally {
+} finally {
   if (mounted) {
     setState(() => _isLoading = false);
   }
-    }
+}
   }
 
   @override
@@ -158,23 +173,17 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                         : null,
                   ),
                 IconButton(
-                  onPressed: () {
-                    onPressed: _pickImage;
-                    // Lógica para editar a foto de perfil (requer ImagePicker e Storage)
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Upload de foto ainda não implementado.')),
-                    );
-                  },
-                  icon: const Icon(Icons.edit),
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF3D4A9C),
-                  ),
+         // Apenas chama a função diretamente:
+                onPressed: _pickImage,
+                icon: const Icon(Icons.edit),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF3D4A9C),
+                ),
                 ),
               ],
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 30),   
             TextField(
               // 5. Usa o controller
               controller: _displayNameController,
