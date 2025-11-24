@@ -42,6 +42,22 @@ class AuthService {
     }
   }
 
+  Future<String> sendPasswordResetEmail(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email.trim());
+      return "Sucesso";
+    } on FirebaseAuthException catch (e) {
+      // Retorna uma mensagem de erro amigável
+      if (e.code == 'user-not-found') {
+        return "Nenhuma conta encontrada com este e-mail.";
+      } else {
+        return "Erro: ${e.message}";
+      }
+    } catch (e) {
+      return "Erro: Ocorreu um problema inesperado.";
+    }
+  }
+
   // --- Registro com E-mail/Senha ---
   Future<UserCredential?> signUpWithEmailPassword(String email, String password) async {
     try {
@@ -49,6 +65,7 @@ class AuthService {
         email: email.trim(),
         password: password.trim(),
       );
+      await userCredential.user!.sendEmailVerification();
       return userCredential;
     } on FirebaseAuthException catch (e) {
       print(e.message);
@@ -82,6 +99,7 @@ class AuthService {
     User user,
     String? displayName,
     String friendCode, // <-- 1. ADICIONE O NOVO PARÂMETRO
+    String? photoURL,
   ) async {
     try {
       final userRef = _firestore.collection('users').doc(user.uid);
@@ -90,7 +108,7 @@ class AuthService {
         'uid': user.uid,
         'email': user.email,
         'displayName': displayName ?? user.email?.split('@')[0],
-        'photoURL': user.photoURL,
+        'photoURL': photoURL,
         'lastLogin': FieldValue.serverTimestamp(),
         'friendCode': friendCode, // <-- 2. ADICIONE O CAMPO NO MAPA
       }, SetOptions(merge: true));
@@ -102,21 +120,22 @@ class AuthService {
   }
 
   // --- Atualizar Perfil (usado na profile_setup_screen) ---
-  Future<void> updateUserProfile(User user, String displayName, {String? photoURL}) async {
+  Future<void> updateUserProfile(User user, String displayName,
+      {String? photoURL}) async {
     try {
       // 1. Atualiza o perfil no Firebase Auth
       await user.updateDisplayName(displayName);
       if (photoURL != null) {
         await user.updatePhotoURL(photoURL);
       }
-      
+
       // 2. Atualiza o documento no Firestore
       final userRef = _firestore.collection('users').doc(user.uid);
       await userRef.update({
         'displayName': displayName,
-        'photoURL': photoURL ?? user.photoURL, // Mantém a foto antiga se nenhuma nova for fornecida
+        'photoURL':
+            photoURL ?? user.photoURL, // Usa a nova foto ou a antiga
       });
-
     } catch (e) {
       print("Erro ao atualizar perfil: $e");
     }

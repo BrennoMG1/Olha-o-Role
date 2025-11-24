@@ -1,10 +1,9 @@
-import 'package:Olha_o_Role/auth/auth_service.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:Olha_o_Role/auth/auth_service.dart';
 
 import 'profile_setup_screen.dart';
 
-// 1. Convertido para StatefulWidget
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
 
@@ -13,7 +12,12 @@ class RegistrationScreen extends StatefulWidget {
 }
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
-  // 2. Controladores e estado de loading
+  // Constantes de cor para o estilo rústico
+  static const Color _primaryColor = Color.fromARGB(255, 211, 173, 92); // Amarelo Queimado
+  static const Color _backgroundColor = Color.fromARGB(255, 230, 210, 185); // Bege
+  static const Color _textColor = Color.fromARGB(255, 63, 39, 28); // Marrom Escuro
+
+  final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -28,113 +32,245 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     super.dispose();
   }
 
-  // 3. Função para mostrar erros
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
-  // 4. Lógica de Cadastro
+  // Lógica de Cadastro
   Future<void> _signUp() async {
-    if (_passwordController.text != _confirmPasswordController.text) {
-      _showError('As senhas não coincidem.');
+    if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
-    
-    // Validação extra (muito comum o Firebase reclamar disso)
-    if (_passwordController.text.length < 6) {
-      _showError('A senha deve ter pelo menos 6 caracteres.');
+
+    if (_passwordController.text != _confirmPasswordController.text) {
+      _showError('As senhas não coincidem.');
       return;
     }
 
     setState(() => _isLoading = true);
 
-    // Vamos chamar o serviço FORA de um try/catch, 
-    // pois ele já lida com os próprios erros (retornando null).
-    final userCredential = await _authService.signUpWithEmailPassword(
-      _emailController.text,
-      _passwordController.text,
-    );
+    try {
+      final userCredential = await _authService.signUpWithEmailPassword(
+        _emailController.text,
+        _passwordController.text,
+      );
 
-    // Agora, verificamos se o resultado é nulo
-    if (mounted) {
-      if (userCredential != null && userCredential.user != null) {
-        // SUCESSO!
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProfileSetupScreen(user: userCredential.user!),
-          ),
-        );
-      } else {
-        // FALHA! O serviço retornou null.
-        // Damos um feedback genérico, já que o erro real foi impresso no console.
-        _showError(
-            'Falha ao registrar. Verifique o e-mail ou se a senha é válida.');
+      // VVVV CORREÇÃO DE NAVEGAÇÃO VVVV
+      if (mounted) {
+        if (userCredential != null && userCredential.user != null) {
+          // Usa pushReplacement para REMOVER a tela de Registro da pilha
+          Navigator.push( 
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProfileSetupScreen(user: userCredential.user!),
+            ),
+          );
+        } else {
+          // Isso não deve acontecer se a exceção não for lançada
+          _showError('Falha ao registrar. Tente novamente.');
+        }
       }
-
-      // O loading deve parar tanto em caso de sucesso (antes de navegar)
-      // quanto em caso de falha. Colocamos fora do "else".
-      // Mas como o "if" navega, só precisamos no "else" e no "finally" geral.
-      setState(() => _isLoading = false);
+    // VVVV TRATAMENTO DE ERRO EXPLÍCITO VVVV
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'email-already-in-use') {
+        _showError('Este e-mail já está sendo utilizado. Tente fazer login.');
+      } else if (e.code == 'weak-password') {
+        _showError('A senha é muito fraca. Escolha uma mais forte.');
+      } else {
+        _showError('Erro ao registrar: ${e.message}');
+      }
+    } catch (e) {
+      _showError('Ocorreu um erro inesperado: ${e.toString()}');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _backgroundColor,
       appBar: AppBar(
-        title: const Text('Crie sua conta'),
-        backgroundColor: const Color(0xFF3D4A9C),
+        title: const Text(
+          'Criar sua conta',
+          style: TextStyle(
+            color: _textColor,
+            fontFamily: 'Itim',
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: _backgroundColor,
+        iconTheme: const IconThemeData(color: _textColor),
+        elevation: 0,
+
+        // 👇 BOTÃO DE VOLTAR ADICIONADO
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _emailController,
-              decoration: const InputDecoration(
-                labelText: 'E-mail:',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.emailAddress,
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Cadastre-se para começar o rolê:',
+                  style: TextStyle(
+                    fontSize: 24,
+                    color: _textColor,
+                    fontFamily: 'Itim',
+                  ),
+                ),
+                const SizedBox(height: 30),
+
+                _buildTextField(
+                  controller: _emailController,
+                  label: 'E-mail',
+                  icon: Icons.alternate_email,
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) return 'Digite seu e-mail';
+
+                    String pattern = r'^[^@\s]+@[^@\s]+\.[^@\s]+$';
+                    RegExp regex = RegExp(pattern);
+                    if (!regex.hasMatch(value)) return 'E-mail inválido';
+
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 15),
+
+                _buildTextField(
+                  controller: _passwordController,
+                  label: 'Senha (mín. 6 caracteres)',
+                  icon: Icons.lock_outline,
+                  obscureText: true,
+                  validator: (value) {
+                    if (value == null || value.length < 6) return 'A senha deve ter pelo menos 6 caracteres';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 15),
+
+                _buildTextField(
+                  controller: _confirmPasswordController,
+                  label: 'Confirme a senha',
+                  icon: Icons.lock_reset,
+                  obscureText: true,
+                  validator: (value) {
+                    if (value != _passwordController.text) return 'As senhas não coincidem';
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 40),
+
+                _buildAuthButton(
+                  onPressed: _signUp,
+                  label: 'Criar conta',
+                  icon: const Icon(Icons.arrow_forward),
+                  backgroundColor: _primaryColor,
+                  textColor: _textColor,
+                  isLoading: _isLoading,
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _passwordController,
-              decoration: const InputDecoration(
-                labelText: 'Senha:',
-                border: OutlineInputBorder(),
-              ),
-              obscureText: true,
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _confirmPasswordController,
-              decoration: const InputDecoration(
-                labelText: 'Confirme a senha:',
-                border: OutlineInputBorder(),
-              ),
-              obscureText: true,
-            ),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _signUp,
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 50),
-                backgroundColor: const Color(0xFF3D4A9C),
-                foregroundColor: Colors.white,
-              ),
-              child: _isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('Avançar'),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
-}
 
+  // --- Widgets Auxiliares ---
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    TextInputType keyboardType = TextInputType.text,
+    bool obscureText = false,
+    required IconData icon,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      obscureText: obscureText,
+      validator: validator,
+      style: const TextStyle(color: _textColor, fontFamily: 'Itim'),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: _textColor.withOpacity(0.8), fontFamily: 'Itim'),
+        prefixIcon: Icon(icon, color: _textColor.withOpacity(0.7)),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15.0),
+          borderSide: const BorderSide(color: _primaryColor, width: 1.5),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15.0),
+          borderSide: const BorderSide(color: _textColor, width: 2.0),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15.0),
+          borderSide: BorderSide(color: _textColor.withOpacity(0.5), width: 1.0),
+        ),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.85),
+      ),
+    );
+  }
+
+  Widget _buildAuthButton({
+    required VoidCallback onPressed,
+    required String label,
+    required Icon icon,
+    required Color backgroundColor,
+    required Color textColor,
+    bool isLoading = false,
+    Color? borderColor,
+  }) {
+    return ElevatedButton.icon(
+      onPressed: isLoading ? null : onPressed,
+      icon: isLoading
+          ? const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(color: _textColor, strokeWidth: 3),
+            )
+          : icon,
+      label: Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'Itim',
+          fontSize: 18,
+          color: textColor,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      style: ElevatedButton.styleFrom(
+        minimumSize: const Size(double.infinity, 55),
+        backgroundColor: backgroundColor,
+        foregroundColor: textColor,
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30),
+          side: borderColor != null
+              ? BorderSide(color: borderColor, width: 2)
+              : BorderSide.none,
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 15),
+      ),
+    );
+  }
+}

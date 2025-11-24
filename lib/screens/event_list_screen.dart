@@ -10,6 +10,8 @@ import 'join_event_screen.dart';
 import 'event_detail_screen.dart';
 import 'friends_screen.dart';
 import '/services/friends_services.dart';
+import 'profile_screen.dart';
+import 'settings_screen.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -25,6 +27,7 @@ class _EventListScreenState extends State<EventListScreen> {
   final FriendsService _friendsService = FriendsService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final User? _currentUser = FirebaseAuth.instance.currentUser;
+  String _photoCacheKey = DateTime.now().millisecondsSinceEpoch.toString();
 
   // Variáveis de estado para o Drawer (como antes)
   Map<String, dynamic>? _userDocumentData;
@@ -88,6 +91,7 @@ class _EventListScreenState extends State<EventListScreen> {
     if (mounted) {
       setState(() {
         _userDocumentData = docData;
+        _photoCacheKey = DateTime.now().millisecondsSinceEpoch.toString();
       });
     }
   }
@@ -207,8 +211,9 @@ class _EventListScreenState extends State<EventListScreen> {
               ),
               currentAccountPicture: CircleAvatar(
                 backgroundImage: (_currentUser?.photoURL != null)
-                    ? NetworkImage(_currentUser!.photoURL!)
-                    : null,
+                  ? NetworkImage(
+                      '${_currentUser!.photoURL!}?key=$_photoCacheKey') // <-- CORREÇÃO AQUI
+                  : null,
                 backgroundColor: Colors.white,
                 child: (_currentUser?.photoURL == null)
                     ? const Icon(Icons.person,
@@ -228,17 +233,33 @@ class _EventListScreenState extends State<EventListScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.person),
-              title: const Text('Perfil - em breve',
-                  style: TextStyle(
-                      fontFamily: 'Itim',
-                      decoration: TextDecoration.lineThrough)),
+              title: const Text('Perfil', style: TextStyle(fontFamily: 'Itim')), // <-- 1. Removido o "em breve"
+              onTap: () { // <-- 2. Adicionado o onTap
+                Navigator.pop(context); // Fecha o drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileScreen(),
+                  ),
+                ).then((_) {
+                  // Ao retornar da ProfileScreen, force o recarregamento
+                  _loadCurrentUserData(); 
+                });
+            },
             ),
             ListTile(
               leading: const Icon(Icons.settings),
-              title: const Text('Configurações - em breve',
-                  style: TextStyle(
-                      fontFamily: 'Itim',
-                      decoration: TextDecoration.lineThrough)),
+              title: const Text('Configurações',
+                  style: TextStyle(fontFamily: 'Itim')), // <-- Removido o "em breve"
+              onTap: () {
+                Navigator.pop(context); // Fecha o drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SettingsScreen(),
+                  ),
+                );
+              },
             ),
             const Divider(),
             ListTile(

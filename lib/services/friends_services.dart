@@ -29,6 +29,43 @@ class FriendsService {
         .snapshots();
   }
 
+  Future<String> removeFriend(String friendId) async {
+    if (_currentUser == null) {
+      return "Erro: Usuário não logado.";
+    }
+
+    final myUid = _currentUser!.uid;
+
+    try {
+      // Usamos um BATCH para garantir que a operação seja atômica
+      WriteBatch batch = _firestore.batch();
+
+      // 1. Remove o amigo da MINHA lista
+      batch.delete(_firestore
+          .collection('users')
+          .doc(myUid)
+          .collection('friends')
+          .doc(friendId));
+
+      // 2. Remove o usuário atual (EU) da lista do AMIGO
+      batch.delete(_firestore
+          .collection('users')
+          .doc(friendId)
+          .collection('friends')
+          .doc(myUid));
+
+      await batch.commit();
+
+      return "Sucesso";
+    } on FirebaseException catch (e) {
+      print("Erro ao remover amigo: $e");
+      return "Erro ao remover amigo: ${e.code}";
+    } catch (e) {
+      return "Erro inesperado: $e";
+    }
+  }
+
+
   /// Envia um convite de amizade para um usuário (usando o friendCode)
   Future<String> sendFriendInvite(String friendCode) async {
     if (_currentUser == null) return "Erro: Usuário não logado.";
@@ -78,6 +115,7 @@ class FriendsService {
       return "Erro: Ocorreu um problema ao enviar o convite.";
     }
   }
+  
 
   /// Aceita um convite de amizade
   Future<void> acceptFriendInvite(String senderId, String senderName,

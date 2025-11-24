@@ -34,6 +34,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   late List<String> _participants;
   late Set<String> _pendingInviteFriendIds;
   final Set<String> _locallyInvitedFriendIds = {};
+  bool _isHost = false;
 
   // --- Métodos de Ciclo de Vida (initState) ---
   @override
@@ -62,6 +63,8 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     // Carrega os IDs dos convites pendentes do documento do evento
     _pendingInviteFriendIds =
         Set<String>.from(_eventData['pendingInvites'] ?? []);
+
+    _isHost = (_eventData['hostId'] == _currentUser?.uid);
   }
 
 /// 1. MÉTODO PARA BUSCAR OS DADOS DOS PARTICIPANTES
@@ -78,7 +81,60 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     // Retorna apenas os documentos que existem
     return results.where((doc) => doc.exists).toList();
   }
+  
+  Future<void> _showLeaveConfirmationDialog() async {
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          // ... (estilização do diálogo)
+          title: const Text('Sair do Evento', style: TextStyle(fontFamily: 'Itim')),
+          content: const Text(
+              'Você tem certeza que quer sair deste evento?\n\nOs itens que você se comprometeu a levar serão liberados.',
+              style: TextStyle(fontFamily: 'Itim')),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancelar', style: TextStyle(fontFamily: 'Itim')),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+              child: const Text('Sair', style: TextStyle(fontFamily: 'Itim')),
+              onPressed: () async {
+                // Cláusula de Guarda (validação)
+                if (_currentUser == null) {
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Erro: Usuário não encontrado.'),
+                        backgroundColor: Colors.red),
+                  );
+                  return; 
+                }
 
+                // Chamada segura
+                final result =
+                    await _eventService.leaveEvent(_eventId, _currentUser!);
+
+                if (mounted) {
+                  if (result == "Sucesso") {
+                    Navigator.of(context).pop(); 
+                    Navigator.of(context).pop(); 
+                  } else {
+                    Navigator.of(context).pop(); 
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text(result), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
   /// 2. O WIDGET DO CARD DE PARTICIPANTES
   /// Constrói o card principal que usa um FutureBuilder
   Widget _buildParticipantsCard() {
@@ -134,7 +190,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       ),
     );
   }
-
+  
   /// 3. O WIDGET DE CADA LINHA DE PARTICIPANTE
   /// Constrói o ListTile (ícone + nome) para um único participante
   Widget _buildParticipantTile(DocumentSnapshot userDoc) {
@@ -854,6 +910,23 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 30),
+              if (!_isHost) // SÓ MOSTRA SE NÃO FOR O ANFITRIÃO
+            ElevatedButton(
+              onPressed: _showLeaveConfirmationDialog,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade800,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Sair do Evento',
+                style: TextStyle(fontFamily: 'Itim', fontSize: 18),
+              ),
+            ),
             ],
           ),
         ),

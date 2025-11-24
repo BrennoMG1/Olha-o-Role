@@ -49,7 +49,7 @@ class EventItem {
       totalQuantity: map['totalQuantity'] ?? 0, // Nome atualizado
       // Converte a lista de mapas lida do Firestore em lista de Contributor
       contributors: (map['contributors'] as List<dynamic>? ?? [])
-          .map((cMap) => Contributor.fromMap(cMap))
+          .map((cMap) => Contributor.fromMap(cMap as Map<String, dynamic>)) // <-- CORRIGIDO
           .toList(),
     );
   }
