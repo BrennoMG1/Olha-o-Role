@@ -1,82 +1,120 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:Olha_o_Role/auth/auth_service.dart';
+import 'package:flutter/material.dart';
+// CORREÇÃO AQUI: Mudando para um caminho relativo
+import '/auth/auth_service.dart'; 
+import 'event_list_screen.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import '/services/storage_service.dart';
 
-import 'profile_setup_screen.dart';
+class ProfileSetupScreen extends StatefulWidget {
+  final User user;
 
-class RegistrationScreen extends StatefulWidget {
-  const RegistrationScreen({super.key});
+  const ProfileSetupScreen({super.key, required this.user});
 
   @override
-  State<RegistrationScreen> createState() => _RegistrationScreenState();
+  State<ProfileSetupScreen> createState() => _ProfileSetupScreenState();
 }
 
-class _RegistrationScreenState extends State<RegistrationScreen> {
-  // Constantes de cor para o estilo rústico
-  static const Color _primaryColor = Color.fromARGB(255, 211, 173, 92); // Amarelo Queimado
-  static const Color _backgroundColor = Color.fromARGB(255, 230, 210, 185); // Bege
-  static const Color _textColor = Color.fromARGB(255, 63, 39, 28); // Marrom Escuro
-
-  final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
+class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
+  final _displayNameController = TextEditingController();
   final _authService = AuthService();
+  final _storageService = StorageService();
+  final _picker = ImagePicker();
+
   bool _isLoading = false;
+  File? _pickedImage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.user.displayName != null) {
+      _displayNameController.text = widget.user.displayName!;
+    }
+  }
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
+    _displayNameController.dispose();
     super.dispose();
   }
 
-  void _showError(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() => _pickedImage = File(image.path));
+    }
   }
 
-  // Lógica de Cadastro
-  Future<void> _signUp() async {
-    if (!(_formKey.currentState?.validate() ?? false)) {
-      return;
-    }
-
-    if (_passwordController.text != _confirmPasswordController.text) {
-      _showError('As senhas não coincidem.');
+  Future<void> _saveProfile() async {
+    if (_displayNameController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor, insira um nome de exibição.'),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      final userCredential = await _authService.signUpWithEmailPassword(
-        _emailController.text,
-        _passwordController.text,
+      await widget.user.reload();
+
+      if (!widget.user.emailVerified) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Por favor, verifique seu e-mail antes de continuar.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      String? photoURL = widget.user.photoURL;
+
+      if (_pickedImage != null) {
+        photoURL = await _storageService.uploadProfilePicture(
+          _pickedImage!,
+          widget.user.uid,
+        );
+      }
+
+      await widget.user.updateDisplayName(_displayNameController.text);
+      if (photoURL != null) {
+        await widget.user.updatePhotoURL(photoURL);
+      }
+
+      final String fullHex = widget.user.uid.hashCode
+          .abs()
+          .toRadixString(16)
+          .padLeft(8, '0')
+          .toUpperCase();
+      final String friendCode = fullHex.substring(fullHex.length - 8);
+
+      await _authService.saveUserToFirestore(
+        widget.user,
+        _displayNameController.text,
+        friendCode,
+        photoURL,
       );
 
       if (mounted) {
-        if (userCredential != null && userCredential.user != null) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ProfileSetupScreen(user: userCredential.user!),
-            ),
-          );
-        } else {
-          _showError('Falha ao registrar. Verifique o e-mail ou a senha.');
-          setState(() => _isLoading = false);
-        }
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const EventListScreen()),
+          (route) => false,
+        );
       }
     } catch (e) {
-      _showError('Ocorreu um erro inesperado: ${e.toString()}');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao salvar: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -85,180 +123,80 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _backgroundColor,
-      appBar: AppBar(
-        title: const Text(
-          'Criar sua conta',
-          style: TextStyle(
-            color: _textColor,
-            fontFamily: 'Itim',
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        backgroundColor: _backgroundColor,
-        iconTheme: const IconThemeData(color: _textColor),
-        elevation: 0,
+    final String? googlePhoto = widget.user.photoURL;
 
-        // 👇 BOTÃO DE VOLTAR ADICIONADO
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Criar Perfil'),
+        backgroundColor: const Color(0xFF3D4A9C),
+
+        // 🔙 **BOTÃO DE VOLTAR**
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            Navigator.pop(context); // volta para a tela de registro
+          },
         ),
       ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(32.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            const SizedBox(height: 30),
+
+            Stack(
+              alignment: Alignment.bottomRight,
               children: [
-                const Text(
-                  'Cadastre-se para começar o rolê:',
-                  style: TextStyle(
-                    fontSize: 24,
-                    color: _textColor,
-                    fontFamily: 'Itim',
+                CircleAvatar(
+                  radius: 80,
+                  backgroundColor: const Color(0xFFD3CFF8),
+                  backgroundImage: _pickedImage != null
+                      ? FileImage(_pickedImage!)
+                      : (googlePhoto != null
+                          ? NetworkImage(googlePhoto)
+                          : null) as ImageProvider?,
+                  child: (_pickedImage == null && googlePhoto == null)
+                      ? const Icon(Icons.person, size: 100, color: Color(0xFF4A3F99))
+                      : null,
+                ),
+                IconButton(
+                  onPressed: _pickImage,
+                  icon: const Icon(Icons.edit),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF3D4A9C),
                   ),
-                ),
-                const SizedBox(height: 30),
-
-                _buildTextField(
-                  controller: _emailController,
-                  label: 'E-mail',
-                  icon: Icons.alternate_email,
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) return 'Digite seu e-mail';
-
-                    String pattern = r'^[^@\s]+@[^@\s]+\.[^@\s]+$';
-                    RegExp regex = RegExp(pattern);
-                    if (!regex.hasMatch(value)) return 'E-mail inválido';
-
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 15),
-
-                _buildTextField(
-                  controller: _passwordController,
-                  label: 'Senha (mín. 6 caracteres)',
-                  icon: Icons.lock_outline,
-                  obscureText: true,
-                  validator: (value) {
-                    if (value == null || value.length < 6) return 'A senha deve ter pelo menos 6 caracteres';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 15),
-
-                _buildTextField(
-                  controller: _confirmPasswordController,
-                  label: 'Confirme a senha',
-                  icon: Icons.lock_reset,
-                  obscureText: true,
-                  validator: (value) {
-                    if (value != _passwordController.text) return 'As senhas não coincidem';
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 40),
-
-                _buildAuthButton(
-                  onPressed: _signUp,
-                  label: 'Criar conta',
-                  icon: const Icon(Icons.arrow_forward),
-                  backgroundColor: _primaryColor,
-                  textColor: _textColor,
-                  isLoading: _isLoading,
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
 
-  // --- Widgets Auxiliares ---
+            const SizedBox(height: 30),
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    TextInputType keyboardType = TextInputType.text,
-    bool obscureText = false,
-    required IconData icon,
-    String? Function(String?)? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      obscureText: obscureText,
-      validator: validator,
-      style: const TextStyle(color: _textColor, fontFamily: 'Itim'),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: _textColor.withOpacity(0.8), fontFamily: 'Itim'),
-        prefixIcon: Icon(icon, color: _textColor.withOpacity(0.7)),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15.0),
-          borderSide: const BorderSide(color: _primaryColor, width: 1.5),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15.0),
-          borderSide: const BorderSide(color: _textColor, width: 2.0),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15.0),
-          borderSide: BorderSide(color: _textColor.withOpacity(0.5), width: 1.0),
-        ),
-        filled: true,
-        fillColor: Colors.white.withOpacity(0.85),
-      ),
-    );
-  }
+            TextField(
+              controller: _displayNameController,
+              decoration: const InputDecoration(
+                labelText: 'Nome de exibição:',
+                helperText: 'Como os outros usuários verão você.',
+                border: OutlineInputBorder(),
+              ),
+            ),
 
-  Widget _buildAuthButton({
-    required VoidCallback onPressed,
-    required String label,
-    required Icon icon,
-    required Color backgroundColor,
-    required Color textColor,
-    bool isLoading = false,
-    Color? borderColor,
-  }) {
-    return ElevatedButton.icon(
-      onPressed: isLoading ? null : onPressed,
-      icon: isLoading
-          ? const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(color: _textColor, strokeWidth: 3),
-            )
-          : icon,
-      label: Text(
-        label,
-        style: TextStyle(
-          fontFamily: 'Itim',
-          fontSize: 18,
-          color: textColor,
-          fontWeight: FontWeight.bold,
+            const SizedBox(height: 30),
+
+            ElevatedButton(
+              onPressed: _isLoading ? null : _saveProfile,
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
+                backgroundColor: const Color(0xFF3D4A9C),
+                foregroundColor: Colors.white,
+              ),
+              child: _isLoading
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text('Cadastrar e Entrar'),
+            ),
+          ],
         ),
-      ),
-      style: ElevatedButton.styleFrom(
-        minimumSize: const Size(double.infinity, 55),
-        backgroundColor: backgroundColor,
-        foregroundColor: textColor,
-        elevation: 4,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-          side: borderColor != null
-              ? BorderSide(color: borderColor, width: 2)
-              : BorderSide.none,
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 15),
       ),
     );
   }
