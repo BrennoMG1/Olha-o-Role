@@ -12,7 +12,7 @@ class RegistrationScreen extends StatefulWidget {
 }
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
-  // Constantes de cor para o estilo rústico (Reintroduzidas)
+  // Constantes de cor para o estilo rústico
   static const Color _primaryColor = Color.fromARGB(255, 211, 173, 92); // Amarelo Queimado
   static const Color _backgroundColor = Color.fromARGB(255, 230, 210, 185); // Bege
   static const Color _textColor = Color.fromARGB(255, 63, 39, 28); // Marrom Escuro
@@ -45,17 +45,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   // Lógica de Cadastro
   Future<void> _signUp() async {
-    // 1. Validação de formulário (campos vazios)
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
 
-    // 2. Validação de senhas
     if (_passwordController.text != _confirmPasswordController.text) {
       _showError('As senhas não coincidem.');
       return;
     }
-    
+
     setState(() => _isLoading = true);
 
     try {
@@ -64,31 +62,38 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         _passwordController.text,
       );
 
+      // VVVV CORREÇÃO DE NAVEGAÇÃO VVVV
       if (mounted) {
         if (userCredential != null && userCredential.user != null) {
-          // SUCESSO: Navega para a tela de configuração de perfil
-          Navigator.pushReplacement(
+          // Usa pushReplacement para REMOVER a tela de Registro da pilha
+          Navigator.push( 
             context,
             MaterialPageRoute(
               builder: (context) => ProfileSetupScreen(user: userCredential.user!),
             ),
           );
         } else {
-          // FALHA: O serviço retornou null (erro já deve ter sido logado pelo AuthService)
-          _showError(
-              'Falha ao registrar. Verifique o e-mail ou se a senha é válida.');
-          setState(() => _isLoading = false);
+          // Isso não deve acontecer se a exceção não for lançada
+          _showError('Falha ao registrar. Tente novamente.');
         }
       }
+    // VVVV TRATAMENTO DE ERRO EXPLÍCITO VVVV
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'email-already-in-use') {
+        _showError('Este e-mail já está sendo utilizado. Tente fazer login.');
+      } else if (e.code == 'weak-password') {
+        _showError('A senha é muito fraca. Escolha uma mais forte.');
+      } else {
+        _showError('Erro ao registrar: ${e.message}');
+      }
     } catch (e) {
-      // Catch genérico (embora o AuthService já deva tratar a maioria)
-       _showError('Ocorreu um erro inesperado: ${e.toString()}');
-       if (mounted) {
-         setState(() => _isLoading = false);
-       }
+      _showError('Ocorreu um erro inesperado: ${e.toString()}');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -105,6 +110,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         backgroundColor: _backgroundColor,
         iconTheme: const IconThemeData(color: _textColor),
         elevation: 0,
+
+        // 👇 BOTÃO DE VOLTAR ADICIONADO
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -131,13 +142,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   keyboardType: TextInputType.emailAddress,
                   validator: (value) {
                     if (value == null || value.isEmpty) return 'Digite seu e-mail';
-                    // Adicionar validação de formato de e-mail aqui
-                    return null;
+
                     String pattern = r'^[^@\s]+@[^@\s]+\.[^@\s]+$';
                     RegExp regex = RegExp(pattern);
-                    if (!regex.hasMatch(value)) {
-                      return 'Insira um formato de e-mail válido.';
-                    }
+                    if (!regex.hasMatch(value)) return 'E-mail inválido';
+
+                    return null;
                   },
                 ),
                 const SizedBox(height: 15),
@@ -164,7 +174,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     return null;
                   },
                 ),
-                
+
                 const SizedBox(height: 40),
 
                 _buildAuthButton(
@@ -182,8 +192,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       ),
     );
   }
-  
-  // --- Widgets Auxiliares (Copiados de LoginScreen para consistência) ---
+
+  // --- Widgets Auxiliares ---
 
   Widget _buildTextField({
     required TextEditingController controller,
@@ -232,8 +242,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   }) {
     return ElevatedButton.icon(
       onPressed: isLoading ? null : onPressed,
-      icon: isLoading 
-          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: _textColor, strokeWidth: 3))
+      icon: isLoading
+          ? const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(color: _textColor, strokeWidth: 3),
+            )
           : icon,
       label: Text(
         label,
