@@ -126,7 +126,7 @@ Caso sejam realizadas alterações no software, documente nesta área com as res
 
 ![Tela de login](Assets/images/login.jpg)
 ![Registrar-se](Assets/images/registrar.png)
-![Tela inicial](Assets/images/tela_inicial.png)
+![Tela inicial](Assets/images/tela_inicial.jpg)
 ![Criar evento](Assets/images/criar_evento.png)
 ![Tela Inical com evento criado](Assets/images/tela_inicial_com_evento.jpg)
 ![Ingressar em um evento](Assets/images/ingressar_evento.png)
