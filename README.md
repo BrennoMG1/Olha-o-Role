@@ -124,11 +124,12 @@ Caso sejam realizadas alterações no software, documente nesta área com as res
 
 # **Página de destino**
 
-![Tela de login](Assets/images/login.jpg)
-![Tela inicial](Assets/images/tela_principal.jpg)
+![Tela de login](Assets/images/login.png)
+![Registrar-se](Assets/images/registrar.png)
+![Tela inicial](Assets/images/tela_inicial.jpg)
 ![Criar evento](Assets/images/criar_evento.jpg)
-![Adicionar itens ao evento](Assets/images/adicionar_itens_evento.jpg)
-![Gerar link para convidados](Assets/images/adicionar_convidados.jpg)
-![Link Gerado para convidados](Assets/images/link_gerado_convidados.jpg)
-![Tela Inical com evento criado](Assets/images/tela_inicial_com_evento.jpg)
-![Detalhes do evento criado](Assets/images/detalhes_evento_criado.jpg)
+![Tela Inical com evento criado](Assets/images/tela_inicial_com_evento.png)
+![Ingressar em um evento](Assets/images/ingressar_evento.png)
+![Escanear QR Code para convidados](Assets/images/qr_code.jpg)
+![Amigos](Assets/images/tela_amigos.png)
+![Perfil](Assets/images/perfil.png)
